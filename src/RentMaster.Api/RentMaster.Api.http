@@ -1,0 +1,71 @@
+@host = https://localhost:7001
+@accessToken = REPLACE_AFTER_LOGIN
+@refreshToken = REPLACE_AFTER_LOGIN
+
+### Register owner
+POST {{host}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Owner One",
+  "email": "owner1@example.com",
+  "phoneNumber": "9000000001",
+  "password": "Owner@12345",
+  "role": "Owner"
+}
+
+### Register tenant
+POST {{host}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Tenant One",
+  "email": "tenant1@example.com",
+  "phoneNumber": "9000000002",
+  "password": "Tenant@12345",
+  "role": "Tenant"
+}
+
+### Login
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "owner1@example.com",
+  "password": "Owner@12345"
+}
+
+### Refresh
+POST {{host}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Verification status
+GET {{host}}/api/v1/verification/status
+Authorization: Bearer {{accessToken}}
+
+### Create property
+POST {{host}}/api/v1/properties
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "2 BHK near IT corridor",
+  "addressLine1": "12 Sample Street",
+  "locality": "Thoraipakkam",
+  "city": "Chennai",
+  "state": "Tamil Nadu",
+  "postalCode": "600097",
+  "monthlyRent": 18000,
+  "securityDeposit": 50000,
+  "bedrooms": 2,
+  "bathrooms": 2,
+  "publish": true
+}
+
+### Search properties
+GET {{host}}/api/v1/properties/search?city=Chennai&maximumRent=20000&page=1&pageSize=20
+Authorization: Bearer {{accessToken}}

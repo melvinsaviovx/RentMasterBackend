@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+appsettings.Local.json
+.local-private-documents/
+secrets.json
+*.db

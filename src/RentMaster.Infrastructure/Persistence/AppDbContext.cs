@@ -1,0 +1,218 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using RentMaster.Domain.Common;
+using RentMaster.Domain.Entities;
+using RentMaster.Infrastructure.Identity;
+
+namespace RentMaster.Infrastructure.Persistence;
+
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
+    : IdentityDbContext<ApplicationUser>(options)
+{
+    public DbSet<OwnerProfile> OwnerProfiles => Set<OwnerProfile>();
+    public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
+    public DbSet<IdentityDocument> IdentityDocuments => Set<IdentityDocument>();
+    public DbSet<Property> Properties => Set<Property>();
+    public DbSet<Tenancy> Tenancies => Set<Tenancy>();
+    public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ReviewScore> ReviewScores => Set<ReviewScore>();
+    public DbSet<ReviewDispute> ReviewDisputes => Set<ReviewDispute>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        builder.Entity<ApplicationUser>(entity =>
+        {
+            entity.Property(x => x.FullName).HasMaxLength(150);
+            entity.Property(x => x.PublicProfileCode).HasMaxLength(20);
+            entity.HasIndex(x => x.PublicProfileCode).IsUnique();
+        });
+
+        ConfigureBaseEntity<OwnerProfile>(builder);
+        ConfigureBaseEntity<TenantProfile>(builder);
+        ConfigureBaseEntity<IdentityDocument>(builder);
+        ConfigureBaseEntity<Property>(builder);
+        ConfigureBaseEntity<Tenancy>(builder);
+        ConfigureBaseEntity<Review>(builder);
+        ConfigureBaseEntity<ReviewScore>(builder);
+        ConfigureBaseEntity<ReviewDispute>(builder);
+        ConfigureBaseEntity<RefreshToken>(builder);
+
+        builder.Entity<OwnerProfile>(entity =>
+        {
+            entity.HasIndex(x => x.UserId).IsUnique();
+            entity.Property(x => x.BusinessName).HasMaxLength(200);
+            entity.HasOne<ApplicationUser>()
+                .WithOne()
+                .HasForeignKey<OwnerProfile>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<TenantProfile>(entity =>
+        {
+            entity.HasIndex(x => x.UserId).IsUnique();
+            entity.HasOne<ApplicationUser>()
+                .WithOne()
+                .HasForeignKey<TenantProfile>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<IdentityDocument>(entity =>
+        {
+            entity.HasIndex(x => new { x.UserId, x.DocumentType }).IsUnique();
+            entity.HasIndex(x => x.NumberHash);
+            entity.Property(x => x.NumberLast4).HasMaxLength(4);
+            entity.Property(x => x.NumberHash).HasMaxLength(128);
+            entity.Property(x => x.StorageObjectName).HasMaxLength(500);
+            entity.Property(x => x.OriginalFileName).HasMaxLength(255);
+            entity.Property(x => x.ContentType).HasMaxLength(100);
+            entity.Property(x => x.ConsentVersion).HasMaxLength(50);
+            entity.Property(x => x.ConsentIpAddress).HasMaxLength(64);
+            entity.Property(x => x.RejectionReason).HasMaxLength(500);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Property>(entity =>
+        {
+            entity.Property(x => x.Title).HasMaxLength(160);
+            entity.Property(x => x.AddressLine1).HasMaxLength(250);
+            entity.Property(x => x.Locality).HasMaxLength(120);
+            entity.Property(x => x.City).HasMaxLength(120);
+            entity.Property(x => x.State).HasMaxLength(120);
+            entity.Property(x => x.PostalCode).HasMaxLength(12);
+            entity.Property(x => x.MonthlyRent).HasPrecision(18, 2);
+            entity.Property(x => x.SecurityDeposit).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.City, x.Locality, x.Status });
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Tenancy>(entity =>
+        {
+            entity.Property(x => x.AgreedMonthlyRent).HasPrecision(18, 2);
+            entity.Property(x => x.AgreedSecurityDeposit).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.PropertyId, x.Status });
+            entity.HasOne(x => x.Property)
+                .WithMany(x => x.Tenancies)
+                .HasForeignKey(x => x.PropertyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.TenantUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Review>(entity =>
+        {
+            entity.HasIndex(x => new { x.TenancyId, x.ReviewerUserId }).IsUnique();
+            entity.Property(x => x.Comment).HasMaxLength(1500);
+            entity.Property(x => x.ModerationReason).HasMaxLength(500);
+            entity.HasOne(x => x.Tenancy)
+                .WithMany(x => x.Reviews)
+                .HasForeignKey(x => x.TenancyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.ReviewerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.SubjectUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ReviewScore>(entity =>
+        {
+            entity.HasIndex(x => new { x.ReviewId, x.Category }).IsUnique();
+            entity.Property(x => x.Category).HasMaxLength(80);
+            entity.HasOne(x => x.Review)
+                .WithMany(x => x.Scores)
+                .HasForeignKey(x => x.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ReviewDispute>(entity =>
+        {
+            entity.Property(x => x.Reason).HasMaxLength(1000);
+            entity.Property(x => x.Resolution).HasMaxLength(1000);
+            entity.HasOne(x => x.Review)
+                .WithMany(x => x.Disputes)
+                .HasForeignKey(x => x.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasIndex(x => x.TokenHash).IsUnique();
+            entity.Property(x => x.TokenHash).HasMaxLength(128);
+            entity.Property(x => x.ReplacedByTokenHash).HasMaxLength(128);
+            entity.Property(x => x.CreatedByIp).HasMaxLength(64);
+            entity.Property(x => x.RevokedByIp).HasMaxLength(64);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AuditLog>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.HttpMethod).HasMaxLength(10);
+            entity.Property(x => x.Path).HasMaxLength(500);
+            entity.Property(x => x.IpAddress).HasMaxLength(64);
+            entity.Property(x => x.UserAgent).HasMaxLength(500);
+            entity.Property(x => x.TraceId).HasMaxLength(100);
+            entity.HasIndex(x => x.OccurredAtUtc);
+            entity.HasIndex(x => x.UserId);
+        });
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAtUtc = now;
+                entry.Entity.UpdatedAtUtc = now;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAtUtc = now;
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                entry.State = EntityState.Modified;
+                entry.Entity.IsDeleted = true;
+                entry.Entity.UpdatedAtUtc = now;
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ConfigureBaseEntity<TEntity>(ModelBuilder builder)
+        where TEntity : BaseEntity
+    {
+        builder.Entity<TEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasQueryFilter(x => !x.IsDeleted);
+        });
+    }
+}
