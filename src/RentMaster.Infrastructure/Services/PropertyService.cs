@@ -194,6 +194,44 @@ public sealed class PropertyService(
         return new PagedResult<PublicPropertyDto>(items, page, pageSize, total);
     }
 
+    public async Task<PublicPropertyDetailsDto> GetPublicDetailsAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await (
+            from property in dbContext.Properties.AsNoTracking()
+            join owner in dbContext.Users.AsNoTracking()
+                on property.OwnerUserId equals owner.Id
+            where property.Id == id && property.Status == PropertyStatus.Published
+            select new { property, owner.PublicProfileCode })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("Published property was not found.");
+
+        var hasActiveApplication = currentUser.IsInRole(AppRoles.Tenant) &&
+            await dbContext.RentalApplications.AsNoTracking().AnyAsync(
+                x => x.PropertyId == id &&
+                     x.TenantUserId == currentUser.UserId &&
+                     (x.Status == RentalApplicationStatus.Submitted ||
+                      x.Status == RentalApplicationStatus.Shortlisted ||
+                      x.Status == RentalApplicationStatus.Accepted),
+                cancellationToken);
+
+        return new PublicPropertyDetailsDto(
+            result.property.Id,
+            result.PublicProfileCode,
+            result.property.Title,
+            result.property.Locality,
+            result.property.City,
+            result.property.State,
+            result.property.PostalCode,
+            result.property.MonthlyRent,
+            result.property.SecurityDeposit,
+            result.property.Bedrooms,
+            result.property.Bathrooms,
+            result.property.Status,
+            hasActiveApplication);
+    }
+
     private void EnsureOwner()
     {
         if (!currentUser.IsInRole(AppRoles.Owner))

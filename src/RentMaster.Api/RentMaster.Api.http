@@ -1,6 +1,10 @@
 @host = https://localhost:7001
-@accessToken = REPLACE_AFTER_LOGIN
+@ownerToken = REPLACE_AFTER_OWNER_LOGIN
+@tenantToken = REPLACE_AFTER_TENANT_LOGIN
 @refreshToken = REPLACE_AFTER_LOGIN
+@propertyId = 00000000-0000-0000-0000-000000000000
+@applicationId = 00000000-0000-0000-0000-000000000000
+@tenancyId = 00000000-0000-0000-0000-000000000000
 
 ### Register owner
 POST {{host}}/api/v1/auth/register
@@ -14,7 +18,7 @@ Content-Type: application/json
   "role": "Owner"
 }
 
-### Register tenant
+### Register tenant — KYC is not required to register or search
 POST {{host}}/api/v1/auth/register
 Content-Type: application/json
 
@@ -31,8 +35,8 @@ POST {{host}}/api/v1/auth/login
 Content-Type: application/json
 
 {
-  "email": "owner1@example.com",
-  "password": "Owner@12345"
+  "email": "tenant1@example.com",
+  "password": "Tenant@12345"
 }
 
 ### Refresh
@@ -43,13 +47,21 @@ Content-Type: application/json
   "refreshToken": "{{refreshToken}}"
 }
 
+### Search houses as any authenticated user — KYC is not required
+GET {{host}}/api/v1/properties/search?city=Chennai&maximumRent=20000&page=1&pageSize=20
+Authorization: Bearer {{tenantToken}}
+
+### View published property details — KYC is not required
+GET {{host}}/api/v1/properties/{{propertyId}}
+Authorization: Bearer {{tenantToken}}
+
 ### Verification status
 GET {{host}}/api/v1/verification/status
-Authorization: Bearer {{accessToken}}
+Authorization: Bearer {{tenantToken}}
 
-### Create property
+### Owner creates a property — owner KYC must be complete
 POST {{host}}/api/v1/properties
-Authorization: Bearer {{accessToken}}
+Authorization: Bearer {{ownerToken}}
 Content-Type: application/json
 
 {
@@ -66,6 +78,39 @@ Content-Type: application/json
   "publish": true
 }
 
-### Search properties
-GET {{host}}/api/v1/properties/search?city=Chennai&maximumRent=20000&page=1&pageSize=20
-Authorization: Bearer {{accessToken}}
+### Tenant applies — tenant KYC must be complete
+POST {{host}}/api/v1/properties/{{propertyId}}/applications
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "expectedMoveInDate": "2026-08-01",
+  "expectedMoveOutDate": "2027-07-31",
+  "occupantCount": 2,
+  "message": "Working professional looking for a long-term rental."
+}
+
+### Tenant views own applications
+GET {{host}}/api/v1/applications/mine?page=1&pageSize=20
+Authorization: Bearer {{tenantToken}}
+
+### Owner views applications for own property
+GET {{host}}/api/v1/properties/{{propertyId}}/applications?page=1&pageSize=20
+Authorization: Bearer {{ownerToken}}
+
+### Owner accepts an application; this creates a pending tenancy
+POST {{host}}/api/v1/applications/{{applicationId}}/accept
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "reason": "Application approved."
+}
+
+### Tenant confirms the pending tenancy; property becomes occupied
+POST {{host}}/api/v1/tenancies/{{tenancyId}}/confirm
+Authorization: Bearer {{tenantToken}}
+
+### Either party cancels before tenant confirmation
+POST {{host}}/api/v1/tenancies/{{tenancyId}}/cancel-pending
+Authorization: Bearer {{tenantToken}}

@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TenantProfile> TenantProfiles => Set<TenantProfile>();
     public DbSet<IdentityDocument> IdentityDocuments => Set<IdentityDocument>();
     public DbSet<Property> Properties => Set<Property>();
+    public DbSet<RentalApplication> RentalApplications => Set<RentalApplication>();
     public DbSet<Tenancy> Tenancies => Set<Tenancy>();
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewScore> ReviewScores => Set<ReviewScore>();
@@ -35,6 +36,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureBaseEntity<TenantProfile>(builder);
         ConfigureBaseEntity<IdentityDocument>(builder);
         ConfigureBaseEntity<Property>(builder);
+        ConfigureBaseEntity<RentalApplication>(builder);
         ConfigureBaseEntity<Tenancy>(builder);
         ConfigureBaseEntity<Review>(builder);
         ConfigureBaseEntity<ReviewScore>(builder);
@@ -95,11 +97,38 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+
+        builder.Entity<RentalApplication>(entity =>
+        {
+            entity.Property(x => x.Message).HasMaxLength(1000);
+            entity.Property(x => x.DecisionReason).HasMaxLength(500);
+            entity.HasIndex(x => new { x.PropertyId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TenantUserId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.PropertyId, x.TenantUserId })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0 AND [Status] IN (1, 2, 3)");
+            entity.HasOne(x => x.Property)
+                .WithMany(x => x.RentalApplications)
+                .HasForeignKey(x => x.PropertyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.TenantUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Tenancy)
+                .WithMany()
+                .HasForeignKey(x => x.TenancyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         builder.Entity<Tenancy>(entity =>
         {
             entity.Property(x => x.AgreedMonthlyRent).HasPrecision(18, 2);
             entity.Property(x => x.AgreedSecurityDeposit).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.PropertyId, x.Status });
+            entity.HasIndex(x => x.PropertyId)
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0 AND [Status] IN (1, 2, 3)");
             entity.HasOne(x => x.Property)
                 .WithMany(x => x.Tenancies)
                 .HasForeignKey(x => x.PropertyId)

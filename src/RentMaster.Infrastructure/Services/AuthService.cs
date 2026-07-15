@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -27,12 +28,21 @@ public sealed class AuthService(
         string ipAddress,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.Role))
+            throw new ValidationException("Role is required.");
+
         var role = AppRoles.SelfRegisterable
-            .FirstOrDefault(x => x.Equals(request.Role, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(x => x.Equals(request.Role.Trim(), StringComparison.OrdinalIgnoreCase))
             ?? throw new ValidationException("Role must be Owner or Tenant.");
 
         if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length > 150)
             throw new ValidationException("Full name is required and must be at most 150 characters.");
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new ValidationException("Email is required.");
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+            throw new ValidationException("Phone number is required.");
+        if (string.IsNullOrWhiteSpace(request.Password))
+            throw new ValidationException("Password is required.");
 
         var email = request.Email.Trim().ToLowerInvariant();
         if (await userManager.FindByEmailAsync(email) is not null)
@@ -75,6 +85,9 @@ public sealed class AuthService(
         string ipAddress,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+            throw new UnauthorizedException("Invalid email or password.");
+
         var email = request.Email.Trim().ToLowerInvariant();
         var user = await userManager.FindByEmailAsync(email);
 
@@ -105,6 +118,10 @@ public sealed class AuthService(
         var now = DateTimeOffset.UtcNow;
         var tokenHash = TokenUtilities.HashRefreshToken(request.RefreshToken);
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
         var existingToken = await dbContext.RefreshTokens
             .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken)
             ?? throw new UnauthorizedException("Invalid refresh token.");
@@ -117,8 +134,6 @@ public sealed class AuthService(
 
         if (!user.IsActive)
             throw new UnauthorizedException("User account is inactive.");
-
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var rawNewRefreshToken = TokenUtilities.CreateRefreshToken();
         var newHash = TokenUtilities.HashRefreshToken(rawNewRefreshToken);

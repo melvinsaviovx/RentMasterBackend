@@ -1,15 +1,6 @@
-using RentMaster.Application.Common;
 using RentMaster.Domain.Enums;
 
 namespace RentMaster.Application.Contracts;
-
-public sealed record CreateTenancyRequest(
-    Guid PropertyId,
-    string TenantEmail,
-    DateOnly StartDate,
-    DateOnly? ExpectedEndDate,
-    decimal AgreedMonthlyRent,
-    decimal AgreedSecurityDeposit);
 
 public sealed record TenancyDto(
     Guid Id,

@@ -39,8 +39,10 @@ Consent version, time, and IP are recorded for each identity submission. The req
 
 A review is trustworthy only when the platform can prove the relationship.
 
-- Owner invites a registered, verified tenant.
-- Tenant must confirm.
+- A registered Tenant may search published houses without KYC.
+- A verified Tenant applies to a property.
+- The verified Owner accepts an application, which creates a pending tenancy.
+- The selected Tenant must confirm.
 - Either party can request closure.
 - The other party must confirm closure.
 - Reviews are unlocked only after closure.

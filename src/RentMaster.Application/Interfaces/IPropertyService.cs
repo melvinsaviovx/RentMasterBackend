@@ -10,4 +10,5 @@ public interface IPropertyService
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
     Task<PagedResult<OwnerPropertyDto>> GetMineAsync(int page, int pageSize, CancellationToken cancellationToken);
     Task<PagedResult<PublicPropertyDto>> SearchAsync(PropertySearchRequest request, CancellationToken cancellationToken);
+    Task<PublicPropertyDetailsDto> GetPublicDetailsAsync(Guid id, CancellationToken cancellationToken);
 }

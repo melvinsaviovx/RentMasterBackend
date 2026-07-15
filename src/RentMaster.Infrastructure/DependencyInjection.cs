@@ -87,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IIdentityVerificationService, IdentityVerificationService>();
         services.AddScoped<IPropertyService, PropertyService>();
+        services.AddScoped<IRentalApplicationService, RentalApplicationService>();
         services.AddScoped<ITenancyService, TenancyService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<IReputationService, ReputationService>();

@@ -10,16 +10,6 @@ namespace RentMaster.Api.Controllers;
 [Route("api/v1/tenancies")]
 public sealed class TenanciesController(ITenancyService tenancyService) : ControllerBase
 {
-    [HttpPost]
-    [Authorize(Roles = AppRoles.Owner)]
-    public async Task<ActionResult<TenancyDto>> Create(
-        CreateTenancyRequest request,
-        CancellationToken cancellationToken)
-    {
-        var result = await tenancyService.CreateAsync(request, cancellationToken);
-        return Created($"/api/v1/tenancies/{result.Id}", result);
-    }
-
     [HttpGet("mine")]
     public Task<PagedResult<TenancyDto>> GetMine(
         [FromQuery] int page = 1,
@@ -31,6 +21,10 @@ public sealed class TenanciesController(ITenancyService tenancyService) : Contro
     [Authorize(Roles = AppRoles.Tenant)]
     public Task<TenancyDto> Confirm(Guid id, CancellationToken cancellationToken) =>
         tenancyService.ConfirmAsync(id, cancellationToken);
+
+    [HttpPost("{id:guid}/cancel-pending")]
+    public Task<TenancyDto> CancelPending(Guid id, CancellationToken cancellationToken) =>
+        tenancyService.CancelPendingAsync(id, cancellationToken);
 
     [HttpPost("{id:guid}/request-end")]
     public Task<TenancyDto> RequestEnd(Guid id, CancellationToken cancellationToken) =>

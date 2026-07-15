@@ -34,6 +34,12 @@ public sealed class PropertiesController(IPropertyService propertyService) : Con
         CancellationToken cancellationToken) =>
         propertyService.SearchAsync(request, cancellationToken);
 
+    [HttpGet("{id:guid}")]
+    public Task<PublicPropertyDetailsDto> GetDetails(
+        Guid id,
+        CancellationToken cancellationToken) =>
+        propertyService.GetPublicDetailsAsync(id, cancellationToken);
+
     [HttpPut("{id:guid}")]
     [Authorize(Roles = AppRoles.Owner)]
     public Task<OwnerPropertyDto> Update(

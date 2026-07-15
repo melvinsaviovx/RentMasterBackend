@@ -65,3 +65,18 @@ public sealed record PropertySearchRequest(
     int? MinimumBedrooms,
     int Page = 1,
     int PageSize = 20);
+
+public sealed record PublicPropertyDetailsDto(
+    Guid Id,
+    string OwnerProfileCode,
+    string Title,
+    string Locality,
+    string City,
+    string State,
+    string PostalCode,
+    decimal MonthlyRent,
+    decimal SecurityDeposit,
+    int Bedrooms,
+    int Bathrooms,
+    PropertyStatus Status,
+    bool HasActiveApplication);

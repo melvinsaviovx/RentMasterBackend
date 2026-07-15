@@ -19,4 +19,5 @@ public sealed class Property : BaseEntity
     public PropertyStatus Status { get; set; } = PropertyStatus.Draft;
 
     public ICollection<Tenancy> Tenancies { get; set; } = [];
+    public ICollection<RentalApplication> RentalApplications { get; set; } = [];
 }
