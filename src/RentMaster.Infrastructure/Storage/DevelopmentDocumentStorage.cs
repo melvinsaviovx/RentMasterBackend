@@ -10,8 +10,10 @@ public sealed class DevelopmentDocumentStorage : IDocumentStorage
 
     public DevelopmentDocumentStorage(IConfiguration configuration)
     {
-        _rootPath = configuration["DocumentStorage:RootPath"]
-            ?? Path.Combine(AppContext.BaseDirectory, "private-documents");
+        var configuredPath = configuration["DocumentStorage:RootPath"];
+        _rootPath = string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine(AppContext.BaseDirectory, "private-documents")
+            : Path.GetFullPath(configuredPath);
 
         Directory.CreateDirectory(_rootPath);
     }
@@ -23,6 +25,10 @@ public sealed class DevelopmentDocumentStorage : IDocumentStorage
         Stream content,
         CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentNullException.ThrowIfNull(content);
+
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
         var objectName = Path.Combine(
             SanitizeSegment(userId),
@@ -71,6 +77,8 @@ public sealed class DevelopmentDocumentStorage : IDocumentStorage
 
     private string ResolveSafePath(string objectName)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectName);
+
         var combined = Path.GetFullPath(Path.Combine(_rootPath, objectName));
         var root = Path.GetFullPath(_rootPath) + Path.DirectorySeparatorChar;
 
@@ -80,6 +88,12 @@ public sealed class DevelopmentDocumentStorage : IDocumentStorage
         return combined;
     }
 
-    private static string SanitizeSegment(string value) =>
-        string.Concat(value.Where(char.IsLetterOrDigit));
+    private static string SanitizeSegment(string value)
+    {
+        var segment = string.Concat(value.Where(char.IsLetterOrDigit));
+        if (string.IsNullOrWhiteSpace(segment))
+            throw new ForbiddenException("Invalid storage user identifier.");
+
+        return segment;
+    }
 }

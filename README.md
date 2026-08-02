@@ -1,133 +1,181 @@
-# Rent Master Backend — Phase 1 (MSSQL)
+# Rent Master Backend — Phase 1
 
-Complete backend starter for a house-rental platform where Owners list houses, Tenants search and apply, both parties complete private KYC, verified tenancies are recorded, and both parties can review each other only after a tenancy ends.
+ASP.NET Core/.NET 10 backend for a house-rental platform using EF Core, SQL Server, ASP.NET Core Identity and JWT authentication.
 
-## Stack
+## Implemented modules
 
-- ASP.NET Core Web API
-- .NET 10
-- Entity Framework Core 10
-- Microsoft SQL Server / Azure SQL
-- ASP.NET Core Identity
-- JWT access tokens
-- Rotating, hashed refresh tokens
-- Role-based authorization
-- SQL Server `rowversion` concurrency
-- Rate limiting, safe exception handling, audit logging and private document storage abstraction
+- Owner and Tenant registration/login
+- JWT access tokens and rotating hashed refresh tokens
+- Role-based authorization with a global authenticated-user policy
+- Private Aadhaar/passport submission and admin verification
+- Owner property creation, update, listing and soft deletion
+- Tenant property search and rental applications
+- Owner shortlist, reject and accept workflow
+- Tenant tenancy confirmation
+- Two-party tenancy closure
+- Post-tenancy owner/tenant reviews
+- Review moderation and disputes
+- Public reputation profiles
+- Audit logging, rate limiting, CORS, health checks and safe Problem Details
+- SQL Server rowversion concurrency and filtered unique indexes
 
-This solution uses **MSSQL**, not MySQL. The provider is `Microsoft.EntityFrameworkCore.SqlServer`, and the DbContext is configured with `UseSqlServer(...)`.
+## Requirements
 
-## Confirmed Phase 1 flow
-
-1. A new Tenant registers using `role: Tenant`.
-2. The Tenant can immediately sign in, search published houses and view public property details. KYC is not required for browsing.
-3. The Tenant completes configured KYC documents before applying.
-4. A verified Owner creates and publishes houses. An owner can list any number of houses.
-5. The verified Tenant applies to a published house.
-6. The Owner views only safe applicant information: display name, public reputation code and application details. Aadhaar, passport, phone and email are not exposed.
-7. The Owner shortlists, rejects or accepts the application.
-8. Accepting creates a pending tenancy. It does not occupy the property yet.
-9. The selected Tenant confirms. The property becomes occupied and other open applications are closed.
-10. Either party can request tenancy closure; the other party confirms it.
-11. Reviews are allowed only after the tenancy ends, one review per side, with moderation and disputes.
-
-Direct owner-to-email tenancy creation has been removed from Phase 1. A tenancy must originate from an accepted rental application.
+- .NET SDK 10.0.302 or a compatible 10.0.3xx patch
+- Docker Desktop, or another SQL Server instance
+- macOS, Linux or Windows
 
 ## Project structure
 
 ```text
-src/RentMaster.Api             Controllers, middleware and API startup
-src/RentMaster.Application     Contracts, service interfaces and application errors
-src/RentMaster.Domain          Entities and enums
-src/RentMaster.Infrastructure  EF Core, Identity, JWT, storage and business services
-scripts                        Migration/database helper scripts
-docs                           Business and security design notes
+src/RentMaster.Api
+src/RentMaster.Application
+src/RentMaster.Domain
+src/RentMaster.Infrastructure
 ```
 
-## SQL Server connection strings
+## First-time setup on macOS
 
-### Visual Studio LocalDB
+Run every command below from the repository root—the directory containing `RentMaster.sln`.
 
-Already configured in `appsettings.Development.json`:
-
-```text
-Server=(localdb)\MSSQLLocalDB;Database=RentMasterDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True
-```
-
-### Local/full SQL Server with Windows authentication
-
-```text
-Server=localhost;Database=RentMasterDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True
-```
-
-### SQL Server authentication or Docker
-
-```text
-Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=YOUR_PASSWORD;TrustServerCertificate=True;MultipleActiveResultSets=True
-```
-
-### Azure SQL
-
-Keep credentials out of source control and configure the value in App Service/Key Vault:
-
-```text
-Server=tcp:YOUR_SERVER.database.windows.net,1433;Initial Catalog=RentMasterDb;User ID=YOUR_USER;Password=YOUR_PASSWORD;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
-```
-
-## Run with LocalDB
-
-Requirements: .NET 10 SDK, Visual Studio SQL Server LocalDB, and HTTPS development certificate.
+### Easiest setup
 
 ```bash
-dotnet tool restore
-dotnet restore
-dotnet ef migrations add InitialCreate --project src/RentMaster.Infrastructure --startup-project src/RentMaster.Api --context AppDbContext
-dotnet ef database update --project src/RentMaster.Infrastructure --startup-project src/RentMaster.Api --context AppDbContext
-dotnet run --project src/RentMaster.Api
+chmod +x scripts/*.sh
+./scripts/setup-local.sh
+./scripts/run-api.sh
 ```
 
-PowerShell helpers:
+The setup script starts SQL Server, restores and builds the solution, creates `InitialCreate` when no migration exists, and applies the database migration.
 
-```powershell
-./scripts/create-migration.ps1 InitialCreate
-./scripts/update-database.ps1
-```
-
-## Run SQL Server in Docker
+### 1. Start SQL Server
 
 ```bash
 cp .env.example .env
 docker compose up -d
+
+docker ps
 ```
 
-Then override the development connection using user-secrets:
+The default local credentials are:
+
+```text
+Server: localhost,1433
+Database: RentMasterDb
+User: sa
+Password: RentMaster@12345
+```
+
+To use another password, change both `.env` and the development connection string through user-secrets or an environment variable.
+
+### 2. Restore tools and packages
 
 ```bash
-dotnet user-secrets set --project src/RentMaster.Api "ConnectionStrings:DefaultConnection" "Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=RentMaster@12345;TrustServerCertificate=True;MultipleActiveResultSets=True"
+dotnet --version
+dotnet tool restore
+dotnet restore RentMaster.sln
+dotnet build RentMaster.sln
 ```
 
-## Development secrets
-
-`appsettings.Development.json` contains local-only placeholder signing values so the solution can start locally. Replace them using user-secrets before shared testing:
+### 3. Create the initial migration
 
 ```bash
-dotnet user-secrets set --project src/RentMaster.Api "Jwt:SigningKey" "USE-A-RANDOM-KEY-WITH-AT-LEAST-64-CHARACTERS"
-dotnet user-secrets set --project src/RentMaster.Api "Verification:NumberHashPepper" "USE-A-DIFFERENT-RANDOM-SECRET-WITH-AT-LEAST-32-CHARACTERS"
+./scripts/create-migration.sh InitialCreate
 ```
 
-Never copy local development secrets into production.
-
-## Admin for local KYC/review testing
-
-Enable the admin seed only through user-secrets:
+Equivalent manual command:
 
 ```bash
-dotnet user-secrets set --project src/RentMaster.Api "AdminSeed:Enabled" "true"
-dotnet user-secrets set --project src/RentMaster.Api "AdminSeed:Email" "admin@rentmaster.local"
-dotnet user-secrets set --project src/RentMaster.Api "AdminSeed:Password" "Admin@123456"
+dotnet ef migrations add InitialCreate \
+  --project src/RentMaster.Infrastructure/RentMaster.Infrastructure.csproj \
+  --startup-project src/RentMaster.Api/RentMaster.Api.csproj \
+  --context AppDbContext \
+  --output-dir Persistence/Migrations
 ```
 
-## Main APIs
+### 4. Create/update the database
+
+```bash
+./scripts/update-database.sh
+```
+
+Equivalent manual command:
+
+```bash
+dotnet ef database update \
+  --project src/RentMaster.Infrastructure/RentMaster.Infrastructure.csproj \
+  --startup-project src/RentMaster.Api/RentMaster.Api.csproj \
+  --context AppDbContext
+```
+
+### 5. Run the API
+
+```bash
+./scripts/run-api.sh
+```
+
+OpenAPI JSON is available in Development at:
+
+```text
+/openapi/v1.json
+```
+
+The health endpoint is:
+
+```text
+/health
+```
+
+## Configuration
+
+Development values are in:
+
+```text
+src/RentMaster.Api/appsettings.Development.json
+```
+
+For local overrides, prefer user-secrets:
+
+```bash
+dotnet user-secrets set --project src/RentMaster.Api \
+  "ConnectionStrings:DefaultConnection" \
+  "Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=YOUR_PASSWORD;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;"
+
+dotnet user-secrets set --project src/RentMaster.Api \
+  "Jwt:SigningKey" \
+  "USE-A-RANDOM-KEY-WITH-AT-LEAST-64-CHARACTERS"
+
+dotnet user-secrets set --project src/RentMaster.Api \
+  "Verification:NumberHashPepper" \
+  "USE-A-DIFFERENT-RANDOM-SECRET-WITH-AT-LEAST-32-CHARACTERS"
+```
+
+The EF design-time factory checks `RENTMASTER_SQL_CONNECTION` first, then loads the API development settings. Example:
+
+```bash
+export RENTMASTER_SQL_CONNECTION='Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=RentMaster@12345;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;'
+```
+
+## Local admin and KYC review
+
+The Development configuration seeds a local-only administrator automatically:
+
+```text
+Email: admin@rentmaster.local
+Password: RentMasterAdmin@2026!
+```
+
+Start/restart the API, sign in through the Angular login page, and open **KYC moderation**. The Admin can preview pending PDF/JPEG/PNG files and approve them or reject them with a mandatory correction reason.
+
+The base `appsettings.json` keeps seeding disabled, so this account is not created in non-Development environments unless explicitly configured. Never use the development password in a deployed environment.
+
+For the complete process and security notes, read:
+
+```text
+docs/KYC-REVIEW-GUIDE.md
+```
+
+## Main endpoints
 
 ### Authentication
 
@@ -136,52 +184,48 @@ dotnet user-secrets set --project src/RentMaster.Api "AdminSeed:Password" "Admin
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 
-### Tenant browsing
+### Verification
 
+- `POST /api/v1/verification/documents`
+- `GET /api/v1/verification/status`
+- `GET /api/v1/admin/verification/pending`
+- `GET /api/v1/admin/verification/{documentId}/file`
+- `POST /api/v1/admin/verification/{documentId}/decision`
+
+### Properties and applications
+
+- `POST /api/v1/properties`
+- `GET /api/v1/properties/mine`
 - `GET /api/v1/properties/search`
 - `GET /api/v1/properties/{propertyId}`
+- `PUT /api/v1/properties/{propertyId}`
+- `DELETE /api/v1/properties/{propertyId}`
+- `POST /api/v1/properties/{propertyId}/applications`
+- `GET /api/v1/applications/mine`
+- `GET /api/v1/properties/{propertyId}/applications`
+- `POST /api/v1/applications/{applicationId}/shortlist`
+- `POST /api/v1/applications/{applicationId}/accept`
+- `POST /api/v1/applications/{applicationId}/reject`
+- `POST /api/v1/applications/{applicationId}/withdraw`
 
-These require login through the global authorization policy but do not require KYC.
-
-### Rental applications
-
-- `POST /api/v1/properties/{propertyId}/applications` — verified Tenant
-- `GET /api/v1/applications/mine` — Tenant
-- `GET /api/v1/properties/{propertyId}/applications` — property Owner
-- `POST /api/v1/applications/{applicationId}/shortlist` — property Owner
-- `POST /api/v1/applications/{applicationId}/accept` — property Owner
-- `POST /api/v1/applications/{applicationId}/reject` — property Owner
-- `POST /api/v1/applications/{applicationId}/withdraw` — applying Tenant
-
-### Tenancies
+### Tenancies and reviews
 
 - `GET /api/v1/tenancies/mine`
 - `POST /api/v1/tenancies/{tenancyId}/confirm`
 - `POST /api/v1/tenancies/{tenancyId}/cancel-pending`
 - `POST /api/v1/tenancies/{tenancyId}/request-end`
 - `POST /api/v1/tenancies/{tenancyId}/confirm-end`
+- `POST /api/v1/reviews`
+- `POST /api/v1/reviews/{reviewId}/dispute`
+- `GET /api/v1/reputation/{profileCode}`
+- `GET /api/v1/admin/reviews/pending`
+- `POST /api/v1/admin/reviews/{reviewId}/decision`
 
-### KYC, reputation and reviews
+## Production requirements
 
-See `RentMaster.Api.http` and `docs/PHASE1-DESIGN.md`.
-
-## MSSQL-specific data protections
-
-- Filtered unique index prevents more than one active application by the same Tenant for the same property.
-- Filtered unique index prevents more than one open tenancy for a property.
-- Acceptance uses a serializable SQL transaction.
-- SQL Server duplicate-key errors `2601`/`2627` are converted into safe conflict responses.
-- `rowversion` is used for optimistic concurrency on domain entities.
-- Decimal rent/deposit fields use `decimal(18,2)`.
-
-## Important security notes
-
-- Raw Aadhaar/passport numbers are not stored in SQL. Only a keyed HMAC hash and masked last four characters are stored.
-- Identity files are private and never exposed to Owners or Tenants.
-- Replace local document storage with a private Blob provider before production.
-- Enable confirmed email/phone flows before public release.
-- Use Key Vault/App Service settings for SQL, JWT and verification secrets.
-- Add malware scanning, retention/deletion workflows, privacy policy, consent records and human moderation before production.
-- Put the API behind Azure Front Door/WAF and restrict direct App Service access.
-
-The environment used to package this repository did not include the .NET SDK, so run `dotnet restore`, migration creation and `dotnet build` locally before merging or deployment.
+- Replace local document storage with private encrypted Blob storage.
+- Store SQL, JWT and verification secrets outside source control.
+- Enable confirmed email/phone flows.
+- Add malware scanning and retention/deletion policies for identity documents.
+- Put the API behind a WAF/reverse proxy and configure trusted forwarded headers.
+- Keep `Database:ApplyMigrationsOnStartup` disabled in production and run reviewed migrations during deployment.

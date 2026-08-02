@@ -16,6 +16,14 @@ public sealed class ExceptionHandlingMiddleware(
         }
         catch (Exception exception)
         {
+            if (context.Response.HasStarted)
+            {
+                logger.LogError(exception,
+                    "Unhandled error after the response started. TraceId: {TraceId}",
+                    context.TraceIdentifier);
+                throw;
+            }
+
             await HandleAsync(context, exception);
         }
     }
@@ -42,9 +50,12 @@ public sealed class ExceptionHandlingMiddleware(
         if (status >= 500)
             logger.LogError(exception, "Unhandled error. TraceId: {TraceId}", context.TraceIdentifier);
         else
-            logger.LogWarning(exception, "Request failed with {StatusCode}. TraceId: {TraceId}",
-                status, context.TraceIdentifier);
+            logger.LogWarning(exception,
+                "Request failed with {StatusCode}. TraceId: {TraceId}",
+                status,
+                context.TraceIdentifier);
 
+        context.Response.Clear();
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/problem+json";
 
@@ -57,6 +68,6 @@ public sealed class ExceptionHandlingMiddleware(
         };
         problem.Extensions["traceId"] = context.TraceIdentifier;
 
-        await context.Response.WriteAsJsonAsync(problem);
+        await context.Response.WriteAsJsonAsync(problem, context.RequestAborted);
     }
 }

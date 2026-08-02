@@ -20,11 +20,19 @@ public sealed class IdentityVerificationService(
     : IIdentityVerificationService
 {
     private readonly VerificationOptions _options = options.Value;
+    private readonly IdentityDocumentType[] _requiredDocuments =
+        options.Value.RequiredDocuments.Distinct().ToArray();
 
     public async Task<IdentityDocumentDto> SubmitAsync(
         SubmitIdentityDocumentCommand command,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(command.DocumentType))
+            throw new ValidationException("Invalid identity document type.");
+
+        if (string.IsNullOrWhiteSpace(command.DocumentNumber))
+            throw new ValidationException("Identity document number is required.");
+
         await ValidateFileAsync(command, cancellationToken);
 
         if (!command.ConsentAccepted)
@@ -123,13 +131,13 @@ public sealed class IdentityVerificationService(
             .OrderBy(x => x.DocumentType)
             .ToListAsync(cancellationToken);
 
-        var complete = _options.RequiredDocuments.All(required =>
+        var complete = _requiredDocuments.All(required =>
             documents.Any(x => x.DocumentType == required && x.Status == VerificationStatus.Verified));
 
         return new VerificationStatusDto(
             complete,
             documents.Select(Map).ToArray(),
-            _options.RequiredDocuments);
+            _requiredDocuments);
     }
 
     public async Task<bool> IsUserVerifiedAsync(string userId, CancellationToken cancellationToken)
@@ -139,7 +147,7 @@ public sealed class IdentityVerificationService(
             .Select(x => x.DocumentType)
             .ToListAsync(cancellationToken);
 
-        return _options.RequiredDocuments.All(verifiedTypes.Contains);
+        return _requiredDocuments.All(verifiedTypes.Contains);
     }
 
     public async Task<PagedResult<PendingIdentityDocumentDto>> GetPendingAsync(
@@ -149,23 +157,27 @@ public sealed class IdentityVerificationService(
     {
         (page, pageSize) = NormalizePage(page, pageSize);
 
-        var query = dbContext.IdentityDocuments
-            .AsNoTracking()
-            .Where(x => x.Status == VerificationStatus.Pending)
-            .OrderBy(x => x.CreatedAtUtc);
+        var query =
+            from document in dbContext.IdentityDocuments.AsNoTracking()
+            join user in dbContext.Users.AsNoTracking() on document.UserId equals user.Id
+            where document.Status == VerificationStatus.Pending
+            orderby document.CreatedAtUtc
+            select new { Document = document, User = user };
 
         var count = await query.CountAsync(cancellationToken);
         var items = await query.Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new PendingIdentityDocumentDto(
-                x.Id,
-                x.UserId,
-                x.DocumentType,
-                $"****{x.NumberLast4}",
-                x.OriginalFileName,
-                x.ContentType,
-                x.SizeBytes,
-                x.CreatedAtUtc))
+                x.Document.Id,
+                x.Document.UserId,
+                x.User.FullName,
+                x.User.Email ?? string.Empty,
+                x.Document.DocumentType,
+                $"****{x.Document.NumberLast4}",
+                x.Document.OriginalFileName,
+                x.Document.ContentType,
+                x.Document.SizeBytes,
+                x.Document.CreatedAtUtc))
             .ToListAsync(cancellationToken);
 
         return new PagedResult<PendingIdentityDocumentDto>(items, page, pageSize, count);
@@ -198,6 +210,9 @@ public sealed class IdentityVerificationService(
 
         if (!request.Approve && string.IsNullOrWhiteSpace(request.Reason))
             throw new ValidationException("A rejection reason is required.");
+
+        if (request.Reason?.Trim().Length > 500)
+            throw new ValidationException("Rejection reason must be at most 500 characters.");
 
         document.Status = request.Approve
             ? VerificationStatus.Verified
@@ -302,7 +317,8 @@ public sealed class IdentityVerificationService(
             $"****{document.NumberLast4}",
             document.Status,
             document.RejectionReason,
-            document.CreatedAtUtc);
+            document.CreatedAtUtc,
+            document.ReviewedAtUtc);
 
     private static (int Page, int PageSize) NormalizePage(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));

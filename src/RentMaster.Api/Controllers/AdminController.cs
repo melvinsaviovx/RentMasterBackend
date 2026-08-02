@@ -27,8 +27,8 @@ public sealed class AdminController(
         CancellationToken cancellationToken)
     {
         var file = await verificationService.OpenDocumentAsync(documentId, cancellationToken);
-        Response.Headers.CacheControl = "no-store";
-        Response.Headers.Pragma = "no-cache";
+        Response.Headers["Cache-Control"] = "no-store";
+        Response.Headers["Pragma"] = "no-cache";
         return File(file.Content, file.ContentType, file.DownloadFileName);
     }
 

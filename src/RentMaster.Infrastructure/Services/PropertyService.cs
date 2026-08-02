@@ -57,11 +57,17 @@ public sealed class PropertyService(
                 cancellationToken)
             ?? throw new NotFoundException("Property was not found.");
 
-        if (property.Status == PropertyStatus.Occupied &&
-            request.Status != PropertyStatus.Occupied)
-        {
+        if (!Enum.IsDefined(request.Status))
+            throw new ValidationException("Property status is invalid.");
+
+        if (request.Status == PropertyStatus.Occupied && property.Status != PropertyStatus.Occupied)
+            throw new ConflictException("Occupied status is managed only by the tenancy workflow.");
+
+        if (property.Status == PropertyStatus.Occupied && request.Status != PropertyStatus.Occupied)
             throw new ConflictException("An occupied property status is managed by the tenancy workflow.");
-        }
+
+        if (string.IsNullOrWhiteSpace(request.RowVersion))
+            throw new ValidationException("RowVersion is required.");
 
         byte[] rowVersion;
         try
@@ -72,6 +78,9 @@ public sealed class PropertyService(
         {
             throw new ValidationException("RowVersion is invalid.");
         }
+
+        if (rowVersion.Length != 8)
+            throw new ValidationException("RowVersion is invalid.");
 
         dbContext.Entry(property).Property(x => x.RowVersion).OriginalValue = rowVersion;
 
@@ -296,6 +305,15 @@ public sealed class PropertyService(
             string.IsNullOrWhiteSpace(postalCode))
         {
             throw new ValidationException("Complete property address is required.");
+        }
+
+        if (address.Trim().Length > 250 ||
+            locality.Trim().Length > 120 ||
+            city.Trim().Length > 120 ||
+            state.Trim().Length > 120 ||
+            postalCode.Trim().Length > 12)
+        {
+            throw new ValidationException("One or more property address fields exceed the allowed length.");
         }
 
         if (monthlyRent <= 0 || deposit < 0)

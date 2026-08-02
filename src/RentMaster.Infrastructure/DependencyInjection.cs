@@ -27,6 +27,10 @@ public static class DependencyInjection
             .Validate(x => !string.IsNullOrWhiteSpace(x.Audience), "JWT audience is required.")
             .Validate(x => !string.IsNullOrWhiteSpace(x.SigningKey) && x.SigningKey.Length >= 64,
                 "JWT signing key must contain at least 64 characters.")
+            .Validate(x => x.AccessTokenMinutes is >= 1 and <= 1440,
+                "JWT access-token lifetime must be between 1 and 1440 minutes.")
+            .Validate(x => x.RefreshTokenDays is >= 1 and <= 365,
+                "JWT refresh-token lifetime must be between 1 and 365 days.")
             .ValidateOnStart();
 
         services.AddOptions<VerificationOptions>()
@@ -34,14 +38,24 @@ public static class DependencyInjection
             .Validate(x => !string.IsNullOrWhiteSpace(x.NumberHashPepper) &&
                            x.NumberHashPepper.Length >= 32,
                 "Verification number hash pepper must contain at least 32 characters.")
+            .Validate(x => x.MaximumFileSizeBytes is > 0 and <= 20 * 1024 * 1024,
+                "Verification maximum file size must be between 1 byte and 20 MB.")
+            .Validate(x => x.RequiredDocuments is { Length: > 0 } &&
+                           x.RequiredDocuments.All(value => Enum.IsDefined(value)),
+                "At least one valid verification document type is required.")
+            .Validate(x => x.RequiredDocuments.Distinct().Count() == x.RequiredDocuments.Length,
+                "Verification document types must not contain duplicates.")
             .ValidateOnStart();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("DefaultConnection is not configured.");
 
+        // services.AddDbContext<AppDbContext>(options =>
+        //     options.UseSqlServer(connectionString, sql =>
+        //         sql.EnableRetryOnFailure(5)));
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlServer(connectionString, sql =>
-                sql.EnableRetryOnFailure(5)));
+            options.UseSqlServer(connectionString));
+
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

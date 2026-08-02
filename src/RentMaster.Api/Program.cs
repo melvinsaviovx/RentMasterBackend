@@ -75,24 +75,31 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// Audit wraps exception handling so failed requests are also recorded.
+app.UseMiddleware<AuditMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 if (!app.Environment.IsDevelopment())
-{
     app.UseHsts();
-}
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    await next();
+});
 
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("ConfiguredOrigins");
 app.UseAuthentication();
 app.UseRateLimiter();
-app.UseMiddleware<AuditMiddleware>();
-app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
-{
     app.MapOpenApi().AllowAnonymous();
-}
 
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapControllers();
@@ -102,9 +109,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
     if (builder.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
-    {
         await dbContext.Database.MigrateAsync();
-    }
 
     var seeder = scope.ServiceProvider.GetRequiredService<IdentitySeeder>();
     await seeder.SeedAsync();

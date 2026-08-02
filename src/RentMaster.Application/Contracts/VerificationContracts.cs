@@ -19,7 +19,8 @@ public sealed record IdentityDocumentDto(
     string MaskedNumber,
     VerificationStatus Status,
     string? RejectionReason,
-    DateTimeOffset SubmittedAtUtc);
+    DateTimeOffset SubmittedAtUtc,
+    DateTimeOffset? ReviewedAtUtc);
 
 public sealed record VerificationStatusDto(
     bool IsComplete,
@@ -33,6 +34,8 @@ public sealed record VerificationDecisionRequest(
 public sealed record PendingIdentityDocumentDto(
     Guid Id,
     string UserId,
+    string UserFullName,
+    string UserEmail,
     IdentityDocumentType DocumentType,
     string MaskedNumber,
     string OriginalFileName,

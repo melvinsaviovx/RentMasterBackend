@@ -54,6 +54,9 @@ public sealed class ReviewService(
         if (request.OverallRating is < 1 or > 5)
             throw new ValidationException("Overall rating must be between 1 and 5.");
 
+        if (request.CategoryScores is null)
+            throw new ValidationException("Category scores are required.");
+
         if (!requiredCategories.All(request.CategoryScores.ContainsKey) ||
             request.CategoryScores.Keys.Any(x => !requiredCategories.Contains(x, StringComparer.Ordinal)))
         {
@@ -208,6 +211,9 @@ public sealed class ReviewService(
 
         if (!request.Publish && string.IsNullOrWhiteSpace(request.Reason))
             throw new ValidationException("A rejection reason is required.");
+
+        if (request.Reason?.Trim().Length > 500)
+            throw new ValidationException("Moderation reason must be at most 500 characters.");
 
         review.Status = request.Publish ? ReviewStatus.Published : ReviewStatus.Rejected;
         review.ModerationReason = request.Publish ? null : request.Reason!.Trim();

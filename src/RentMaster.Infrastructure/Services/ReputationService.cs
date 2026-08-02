@@ -20,6 +20,9 @@ public sealed class ReputationService(
         int pageSize,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(profileCode))
+            throw new ValidationException("Profile code is required.");
+
         var normalizedCode = profileCode.Trim().ToUpperInvariant();
         var user = await dbContext.Users.AsNoTracking()
             .SingleOrDefaultAsync(
@@ -39,7 +42,7 @@ public sealed class ReputationService(
             .OrderByDescending(x => x.ModeratedAtUtc);
 
         var total = await query.CountAsync(cancellationToken);
-        var average = total == 0
+        double? average = total == 0
             ? null
             : await query.AverageAsync(x => (double)x.OverallRating, cancellationToken);
 
