@@ -16,6 +16,10 @@ public sealed class Tenancy : BaseEntity
     public TenancyStatus Status { get; set; } = TenancyStatus.PendingTenantConfirmation;
     public string? EndRequestedByUserId { get; set; }
     public DateTimeOffset? EndRequestedAtUtc { get; set; }
+    public DateOnly? RequestedEndDate { get; set; }
+    public string? EndRequestReason { get; set; }
+    public string? EndApprovedByUserId { get; set; }
+    public DateTimeOffset? EndApprovedAtUtc { get; set; }
 
     public Property Property { get; set; } = null!;
     public ICollection<Review> Reviews { get; set; } = [];

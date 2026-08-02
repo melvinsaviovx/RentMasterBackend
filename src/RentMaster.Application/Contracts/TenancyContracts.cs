@@ -2,6 +2,10 @@ using RentMaster.Domain.Enums;
 
 namespace RentMaster.Application.Contracts;
 
+public sealed record RequestTenancyEndRequest(
+    DateOnly RequestedEndDate,
+    string Reason);
+
 public sealed record TenancyDto(
     Guid Id,
     Guid PropertyId,
@@ -14,4 +18,11 @@ public sealed record TenancyDto(
     decimal AgreedMonthlyRent,
     decimal AgreedSecurityDeposit,
     TenancyStatus Status,
+    string? EndRequestedByUserId,
+    DateTimeOffset? EndRequestedAtUtc,
+    DateOnly? RequestedEndDate,
+    string? EndRequestReason,
+    string? EndApprovedByUserId,
+    DateTimeOffset? EndApprovedAtUtc,
+    Guid? ConversationId,
     DateTimeOffset CreatedAtUtc);

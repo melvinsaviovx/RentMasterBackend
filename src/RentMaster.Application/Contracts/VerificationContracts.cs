@@ -25,7 +25,8 @@ public sealed record IdentityDocumentDto(
 public sealed record VerificationStatusDto(
     bool IsComplete,
     IReadOnlyList<IdentityDocumentDto> Documents,
-    IReadOnlyList<IdentityDocumentType> RequiredDocuments);
+    IReadOnlyList<IdentityDocumentType> RequiredDocuments,
+    int MinimumVerifiedDocuments);
 
 public sealed record VerificationDecisionRequest(
     bool Approve,

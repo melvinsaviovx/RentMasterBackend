@@ -27,10 +27,21 @@ public sealed class TenanciesController(ITenancyService tenancyService) : Contro
         tenancyService.CancelPendingAsync(id, cancellationToken);
 
     [HttpPost("{id:guid}/request-end")]
-    public Task<TenancyDto> RequestEnd(Guid id, CancellationToken cancellationToken) =>
-        tenancyService.RequestEndAsync(id, cancellationToken);
+    public Task<TenancyDto> RequestEnd(
+        Guid id,
+        RequestTenancyEndRequest request,
+        CancellationToken cancellationToken) =>
+        tenancyService.RequestEndAsync(id, request, cancellationToken);
+
+    [HttpPost("{id:guid}/cancel-end-request")]
+    public Task<TenancyDto> CancelEndRequest(Guid id, CancellationToken cancellationToken) =>
+        tenancyService.CancelEndRequestAsync(id, cancellationToken);
 
     [HttpPost("{id:guid}/confirm-end")]
     public Task<TenancyDto> ConfirmEnd(Guid id, CancellationToken cancellationToken) =>
         tenancyService.ConfirmEndAsync(id, cancellationToken);
+
+    [HttpPost("{id:guid}/complete-end")]
+    public Task<TenancyDto> CompleteEnd(Guid id, CancellationToken cancellationToken) =>
+        tenancyService.CompleteEndAsync(id, cancellationToken);
 }

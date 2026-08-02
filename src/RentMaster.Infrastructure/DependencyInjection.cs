@@ -45,6 +45,9 @@ public static class DependencyInjection
                 "At least one valid verification document type is required.")
             .Validate(x => x.RequiredDocuments.Distinct().Count() == x.RequiredDocuments.Length,
                 "Verification document types must not contain duplicates.")
+            .Validate(x => x.MinimumVerifiedDocuments > 0 &&
+                           x.MinimumVerifiedDocuments <= x.RequiredDocuments.Distinct().Count(),
+                "Verification minimum approved-document count must be between 1 and the number of accepted document types.")
             .ValidateOnStart();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection")
@@ -105,9 +108,12 @@ public static class DependencyInjection
         services.AddScoped<ITenancyService, TenancyService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<IReputationService, ReputationService>();
+        services.AddScoped<IChatService, ChatService>();
+        services.AddSingleton<IndiaDateProvider>();
         services.AddScoped<IDocumentStorage, DevelopmentDocumentStorage>();
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IdentitySeeder>();
+        services.AddScoped<DevelopmentDataSeeder>();
 
         return services;
     }

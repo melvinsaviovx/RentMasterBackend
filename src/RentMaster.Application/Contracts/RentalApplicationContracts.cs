@@ -22,5 +22,6 @@ public sealed record RentalApplicationDto(
     string Message,
     RentalApplicationStatus Status,
     Guid? TenancyId,
+    Guid? ConversationId,
     DateTimeOffset CreatedAtUtc,
     string RowVersion);

@@ -6,5 +6,6 @@ public enum TenancyStatus
     Active = 2,
     EndRequested = 3,
     Ended = 4,
-    Cancelled = 5
+    Cancelled = 5,
+    EndScheduled = 6
 }

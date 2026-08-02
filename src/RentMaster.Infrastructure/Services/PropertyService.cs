@@ -60,11 +60,13 @@ public sealed class PropertyService(
         if (!Enum.IsDefined(request.Status))
             throw new ValidationException("Property status is invalid.");
 
-        if (request.Status == PropertyStatus.Occupied && property.Status != PropertyStatus.Occupied)
-            throw new ConflictException("Occupied status is managed only by the tenancy workflow.");
+        var requestedSystemStatus = request.Status is PropertyStatus.Occupied or PropertyStatus.Reserved;
+        var currentSystemStatus = property.Status is PropertyStatus.Occupied or PropertyStatus.Reserved;
+        if (requestedSystemStatus && request.Status != property.Status)
+            throw new ConflictException("Reserved and occupied statuses are managed only by the tenancy workflow.");
 
-        if (property.Status == PropertyStatus.Occupied && request.Status != PropertyStatus.Occupied)
-            throw new ConflictException("An occupied property status is managed by the tenancy workflow.");
+        if (currentSystemStatus && request.Status != property.Status)
+            throw new ConflictException("A reserved or occupied property status is managed by the tenancy workflow.");
 
         if (string.IsNullOrWhiteSpace(request.RowVersion))
             throw new ValidationException("RowVersion is required.");
@@ -207,14 +209,27 @@ public sealed class PropertyService(
         Guid id,
         CancellationToken cancellationToken)
     {
+        var canViewThroughApplication = currentUser.IsInRole(AppRoles.Tenant) &&
+            await dbContext.RentalApplications.AsNoTracking().AnyAsync(
+                x => x.PropertyId == id && x.TenantUserId == currentUser.UserId,
+                cancellationToken);
+        var canViewThroughTenancy = await dbContext.Tenancies.AsNoTracking().AnyAsync(
+            x => x.PropertyId == id &&
+                 (x.OwnerUserId == currentUser.UserId || x.TenantUserId == currentUser.UserId),
+            cancellationToken);
+
         var result = await (
             from property in dbContext.Properties.AsNoTracking()
             join owner in dbContext.Users.AsNoTracking()
                 on property.OwnerUserId equals owner.Id
-            where property.Id == id && property.Status == PropertyStatus.Published
+            where property.Id == id &&
+                  (property.Status == PropertyStatus.Published ||
+                   property.OwnerUserId == currentUser.UserId ||
+                   canViewThroughApplication ||
+                   canViewThroughTenancy)
             select new { property, owner.PublicProfileCode })
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException("Published property was not found.");
+            ?? throw new NotFoundException("Property was not found or is not available to this account.");
 
         var hasActiveApplication = currentUser.IsInRole(AppRoles.Tenant) &&
             await dbContext.RentalApplications.AsNoTracking().AnyAsync(

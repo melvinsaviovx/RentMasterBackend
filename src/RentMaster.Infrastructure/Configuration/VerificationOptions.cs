@@ -9,8 +9,12 @@ public sealed class VerificationOptions
     public required string NumberHashPepper { get; init; }
     public long MaximumFileSizeBytes { get; init; } = 5 * 1024 * 1024;
 
-    // Keep this empty in code. The configured values in appsettings are the
-    // single source of truth; initialising the array with values here can cause
-    // configuration binding to append the same documents a second time.
+    // These are the accepted document types shown to the user.
+    // The configured MinimumVerifiedDocuments value decides how many of them
+    // must be approved before the account is considered verified.
     public IdentityDocumentType[] RequiredDocuments { get; init; } = [];
+
+    // Phase 1 policy: approve any one accepted identity document
+    // (Aadhaar OR Passport).
+    public int MinimumVerifiedDocuments { get; init; } = 1;
 }

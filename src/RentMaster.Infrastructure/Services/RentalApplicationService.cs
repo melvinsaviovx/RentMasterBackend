@@ -13,7 +13,9 @@ namespace RentMaster.Infrastructure.Services;
 public sealed class RentalApplicationService(
     AppDbContext dbContext,
     ICurrentUserService currentUser,
-    IIdentityVerificationService verificationService) : IRentalApplicationService
+    IIdentityVerificationService verificationService,
+    IChatService chatService,
+    IndiaDateProvider dateProvider) : IRentalApplicationService
 {
     public async Task<RentalApplicationDto> ApplyAsync(
         Guid propertyId,
@@ -65,6 +67,19 @@ public sealed class RentalApplicationService(
         {
             throw new ConflictException("You already have an active application for this property.");
         }
+
+        await chatService.EnsureConversationAsync(
+            property.Id,
+            property.OwnerUserId,
+            currentUser.UserId,
+            application.Id,
+            cancellationToken);
+        await chatService.AddSystemMessageAsync(
+            property.Id,
+            property.OwnerUserId,
+            currentUser.UserId,
+            $"The tenant submitted a rental application for {application.ExpectedMoveInDate:dd MMM yyyy}.",
+            cancellationToken);
 
         return await MapAsync(application.Id, cancellationToken);
     }
@@ -143,7 +158,7 @@ public sealed class RentalApplicationService(
         if (application.Property.Status != PropertyStatus.Published)
             throw new ConflictException("The property is no longer available.");
 
-        if (application.ExpectedMoveInDate < DateOnly.FromDateTime(DateTime.UtcNow.Date))
+        if (application.ExpectedMoveInDate < dateProvider.Today)
             throw new ConflictException("The requested move-in date has passed. Ask the tenant to submit a new application.");
 
         await EnsureVerifiedAsync(application.TenantUserId, cancellationToken);
@@ -169,6 +184,7 @@ public sealed class RentalApplicationService(
         };
 
         dbContext.Tenancies.Add(tenancy);
+        application.Property.Status = PropertyStatus.Reserved;
         application.Status = RentalApplicationStatus.Accepted;
         application.DecisionAtUtc = DateTimeOffset.UtcNow;
         application.DecisionByUserId = currentUser.UserId;
@@ -184,6 +200,19 @@ public sealed class RentalApplicationService(
         {
             throw new ConflictException("The property already has an accepted or active tenancy.");
         }
+
+        await chatService.AttachTenancyAsync(
+            application.PropertyId,
+            currentUser.UserId,
+            application.TenantUserId,
+            tenancy.Id,
+            cancellationToken);
+        await chatService.AddSystemMessageAsync(
+            application.PropertyId,
+            currentUser.UserId,
+            application.TenantUserId,
+            "The owner accepted the application. The tenant must confirm the tenancy invitation.",
+            cancellationToken);
 
         return await MapAsync(application.Id, cancellationToken);
     }
@@ -206,6 +235,14 @@ public sealed class RentalApplicationService(
         application.DecisionAtUtc = DateTimeOffset.UtcNow;
         application.DecisionByUserId = currentUser.UserId;
         await dbContext.SaveChangesAsync(cancellationToken);
+        var property = await dbContext.Properties.AsNoTracking()
+            .SingleAsync(x => x.Id == application.PropertyId, cancellationToken);
+        await chatService.AddSystemMessageAsync(
+            application.PropertyId,
+            property.OwnerUserId,
+            application.TenantUserId,
+            "The tenant withdrew the rental application.",
+            cancellationToken);
         return await MapAsync(application.Id, cancellationToken);
     }
 
@@ -231,6 +268,15 @@ public sealed class RentalApplicationService(
         application.DecisionByUserId = currentUser.UserId;
         application.DecisionReason = NormalizeReason(reason);
         await dbContext.SaveChangesAsync(cancellationToken);
+        var actionText = status == RentalApplicationStatus.Shortlisted
+            ? "The owner shortlisted the rental application."
+            : "The owner rejected the rental application.";
+        await chatService.AddSystemMessageAsync(
+            application.PropertyId,
+            application.Property.OwnerUserId,
+            application.TenantUserId,
+            actionText,
+            cancellationToken);
         return await MapAsync(application.Id, cancellationToken);
     }
 
@@ -265,6 +311,12 @@ public sealed class RentalApplicationService(
             select new { application, property, tenant })
             .SingleAsync(cancellationToken);
 
+        var conversationId = await dbContext.ChatConversations.AsNoTracking()
+            .Where(x => x.PropertyId == result.application.PropertyId &&
+                        x.TenantUserId == result.application.TenantUserId)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
         return new RentalApplicationDto(
             result.application.Id,
             result.application.PropertyId,
@@ -277,6 +329,7 @@ public sealed class RentalApplicationService(
             result.application.Message,
             result.application.Status,
             result.application.TenancyId,
+            conversationId,
             result.application.CreatedAtUtc,
             Convert.ToBase64String(result.application.RowVersion));
     }
@@ -305,9 +358,9 @@ public sealed class RentalApplicationService(
             throw new ForbiddenException("Identity verification must be completed before applying or accepting an application.");
     }
 
-    private static void Validate(CreateRentalApplicationRequest request)
+    private void Validate(CreateRentalApplicationRequest request)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var today = dateProvider.Today;
         if (request.ExpectedMoveInDate < today)
             throw new ValidationException("Expected move-in date cannot be in the past.");
         if (request.ExpectedMoveOutDate.HasValue && request.ExpectedMoveOutDate <= request.ExpectedMoveInDate)

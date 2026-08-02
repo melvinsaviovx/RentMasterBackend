@@ -30,7 +30,7 @@ This is for local testing only. The base `appsettings.json` keeps Admin seeding 
 
 1. Start the API and Angular frontend.
 2. Register an Owner or Tenant account.
-3. Submit Aadhaar and Passport from **Identity verification**.
+3. Submit either Aadhaar or Passport from **Identity verification**.
 4. Log out.
 5. Sign in with the local Admin account.
 6. Open **KYC moderation** in the sidebar.
@@ -46,7 +46,7 @@ This is for local testing only. The base `appsettings.json` keeps Admin seeding 
     - **Reject** — a specific rejection reason is mandatory.
 11. Sign back in as the Owner/Tenant and open **Identity verification** to see the result.
 
-Both configured required document types must be `Verified` before `IsComplete` becomes `true`.
+With `Verification:MinimumVerifiedDocuments` set to `1`, any one accepted document must be `Verified` before `IsComplete` becomes `true`. Set it to `2` only when both Aadhaar and Passport are required.
 
 ## Moderation endpoints
 

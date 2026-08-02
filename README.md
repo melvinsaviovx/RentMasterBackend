@@ -10,9 +10,10 @@ ASP.NET Core/.NET 10 backend for a house-rental platform using EF Core, SQL Serv
 - Private Aadhaar/passport submission and admin verification
 - Owner property creation, update, listing and soft deletion
 - Tenant property search and rental applications
-- Owner shortlist, reject and accept workflow
-- Tenant tenancy confirmation
-- Two-party tenancy closure
+- Owner shortlist, reject and accept workflow with Published → Reserved → Occupied property states
+- Tenant tenancy confirmation with India-local calendar validation
+- Owner–tenant property chat with persisted messages and workflow updates
+- Date-based two-party tenancy closure with requester withdrawal and scheduled completion
 - Post-tenancy owner/tenant reviews
 - Review moderation and disputes
 - Public reputation profiles
@@ -63,7 +64,7 @@ The default local credentials are:
 Server: localhost,1433
 Database: RentMasterDb
 User: sa
-Password: RentMaster@12345
+Password: MyPassword@123
 ```
 
 To use another password, change both `.env` and the development connection string through user-secrets or an environment variable.
@@ -153,16 +154,17 @@ dotnet user-secrets set --project src/RentMaster.Api \
 The EF design-time factory checks `RENTMASTER_SQL_CONNECTION` first, then loads the API development settings. Example:
 
 ```bash
-export RENTMASTER_SQL_CONNECTION='Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=RentMaster@12345;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;'
+export RENTMASTER_SQL_CONNECTION='Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=MyPassword@123;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;'
 ```
 
 ## Local admin and KYC review
 
-The Development configuration seeds a local-only administrator automatically:
+The Development configuration seeds local-only UAT accounts automatically:
 
 ```text
-Email: admin@rentmaster.local
-Password: RentMasterAdmin@2026!
+Admin: admin@rentmaster.local / RentMasterAdmin@2026!
+Owner: owner@rentmaster.local / RentMasterDemo@2026!
+Tenant: tenant@rentmaster.local / RentMasterDemo@2026!
 ```
 
 Start/restart the API, sign in through the Angular login page, and open **KYC moderation**. The Admin can preview pending PDF/JPEG/PNG files and approve them or reject them with a mandatory correction reason.
@@ -214,12 +216,25 @@ docs/KYC-REVIEW-GUIDE.md
 - `POST /api/v1/tenancies/{tenancyId}/confirm`
 - `POST /api/v1/tenancies/{tenancyId}/cancel-pending`
 - `POST /api/v1/tenancies/{tenancyId}/request-end`
+- `POST /api/v1/tenancies/{tenancyId}/cancel-end-request`
 - `POST /api/v1/tenancies/{tenancyId}/confirm-end`
+- `POST /api/v1/tenancies/{tenancyId}/complete-end`
 - `POST /api/v1/reviews`
 - `POST /api/v1/reviews/{reviewId}/dispute`
 - `GET /api/v1/reputation/{profileCode}`
 - `GET /api/v1/admin/reviews/pending`
 - `POST /api/v1/admin/reviews/{reviewId}/decision`
+
+
+### Chat
+
+- `POST /api/v1/chat/properties/{propertyId}/open`
+- `GET /api/v1/chat/conversations`
+- `GET /api/v1/chat/conversations/{conversationId}/messages`
+- `POST /api/v1/chat/conversations/{conversationId}/messages`
+- `POST /api/v1/chat/conversations/{conversationId}/read`
+
+For the complete local workflow and automated API validation, see `docs/UAT-CHECKLIST.md` and run `./scripts/uat-smoke-test.sh` while the API is running.
 
 ## Production requirements
 
@@ -229,3 +244,14 @@ docs/KYC-REVIEW-GUIDE.md
 - Add malware scanning and retention/deletion policies for identity documents.
 - Put the API behind a WAF/reverse proxy and configure trusted forwarded headers.
 - Keep `Database:ApplyMigrationsOnStartup` disabled in production and run reviewed migrations during deployment.
+
+## Identity verification rule
+
+The default Phase 1 rule accepts Aadhaar or Passport. The API returns both accepted document types, but the account becomes verified after any one of them is approved by an Admin or Moderator.
+
+```json
+"Verification": {
+  "RequiredDocuments": ["Aadhaar", "Passport"],
+  "MinimumVerifiedDocuments": 1
+}
+```

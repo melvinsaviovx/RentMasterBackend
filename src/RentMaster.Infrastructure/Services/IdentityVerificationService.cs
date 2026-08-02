@@ -22,13 +22,18 @@ public sealed class IdentityVerificationService(
     private readonly VerificationOptions _options = options.Value;
     private readonly IdentityDocumentType[] _requiredDocuments =
         options.Value.RequiredDocuments.Distinct().ToArray();
+    private readonly int _minimumVerifiedDocuments =
+        options.Value.MinimumVerifiedDocuments;
 
     public async Task<IdentityDocumentDto> SubmitAsync(
         SubmitIdentityDocumentCommand command,
         CancellationToken cancellationToken)
     {
-        if (!Enum.IsDefined(command.DocumentType))
-            throw new ValidationException("Invalid identity document type.");
+        if (!Enum.IsDefined(command.DocumentType) ||
+            !_requiredDocuments.Contains(command.DocumentType))
+        {
+            throw new ValidationException("This identity document type is not accepted.");
+        }
 
         if (string.IsNullOrWhiteSpace(command.DocumentNumber))
             throw new ValidationException("Identity document number is required.");
@@ -131,13 +136,20 @@ public sealed class IdentityVerificationService(
             .OrderBy(x => x.DocumentType)
             .ToListAsync(cancellationToken);
 
-        var complete = _requiredDocuments.All(required =>
-            documents.Any(x => x.DocumentType == required && x.Status == VerificationStatus.Verified));
+        var verifiedDocumentCount = documents
+            .Where(x => x.Status == VerificationStatus.Verified &&
+                        _requiredDocuments.Contains(x.DocumentType))
+            .Select(x => x.DocumentType)
+            .Distinct()
+            .Count();
+
+        var complete = verifiedDocumentCount >= _minimumVerifiedDocuments;
 
         return new VerificationStatusDto(
             complete,
             documents.Select(Map).ToArray(),
-            _requiredDocuments);
+            _requiredDocuments,
+            _minimumVerifiedDocuments);
     }
 
     public async Task<bool> IsUserVerifiedAsync(string userId, CancellationToken cancellationToken)
@@ -147,7 +159,12 @@ public sealed class IdentityVerificationService(
             .Select(x => x.DocumentType)
             .ToListAsync(cancellationToken);
 
-        return _requiredDocuments.All(verifiedTypes.Contains);
+        var verifiedDocumentCount = verifiedTypes
+            .Where(type => _requiredDocuments.Contains(type))
+            .Distinct()
+            .Count();
+
+        return verifiedDocumentCount >= _minimumVerifiedDocuments;
     }
 
     public async Task<PagedResult<PendingIdentityDocumentDto>> GetPendingAsync(

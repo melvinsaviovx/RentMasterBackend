@@ -113,6 +113,12 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     var seeder = scope.ServiceProvider.GetRequiredService<IdentitySeeder>();
     await seeder.SeedAsync();
+
+    if (app.Environment.IsDevelopment())
+    {
+        var demoSeeder = scope.ServiceProvider.GetRequiredService<DevelopmentDataSeeder>();
+        await demoSeeder.SeedAsync();
+    }
 }
 
 await app.RunAsync();

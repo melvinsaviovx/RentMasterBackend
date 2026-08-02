@@ -25,3 +25,11 @@ The artifact environment used to prepare this package does not provide a .NET SD
 - Added `ReviewedAtUtc` to the user's document-status response.
 - Enabled a local-only Development Admin seed for end-to-end KYC testing.
 - Added `docs/KYC-REVIEW-GUIDE.md` with the complete review process.
+
+## Aadhaar OR Passport verification policy
+
+- Both Aadhaar and Passport are accepted document types.
+- Only one accepted document must be approved for the user to become verified.
+- The policy is configured with `Verification:MinimumVerifiedDocuments = 1`.
+- Change the value to `2` only when both documents must be approved.
+- No database migration is required for this configuration-only change.
