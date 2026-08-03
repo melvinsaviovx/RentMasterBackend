@@ -11,4 +11,7 @@ public interface IPropertyService
     Task<PagedResult<OwnerPropertyDto>> GetMineAsync(int page, int pageSize, CancellationToken cancellationToken);
     Task<PagedResult<PublicPropertyDto>> SearchAsync(PropertySearchRequest request, CancellationToken cancellationToken);
     Task<PublicPropertyDetailsDto> GetPublicDetailsAsync(Guid id, CancellationToken cancellationToken);
+    Task<PropertyPhotoDto> AddPhotoAsync(Guid propertyId, UploadPropertyPhotoCommand command, CancellationToken cancellationToken);
+    Task<StoredPropertyPhoto> OpenPhotoAsync(Guid propertyId, Guid photoId, CancellationToken cancellationToken);
+    Task DeletePhotoAsync(Guid propertyId, Guid photoId, CancellationToken cancellationToken);
 }

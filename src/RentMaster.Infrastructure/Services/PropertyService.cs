@@ -1,4 +1,6 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RentMaster.Application.Common;
 using RentMaster.Application.Contracts;
 using RentMaster.Application.Interfaces;
@@ -11,7 +13,10 @@ namespace RentMaster.Infrastructure.Services;
 public sealed class PropertyService(
     AppDbContext dbContext,
     ICurrentUserService currentUser,
-    IIdentityVerificationService verificationService)
+    IIdentityVerificationService verificationService,
+    IChatService chatService,
+    IDocumentStorage documentStorage,
+    ILogger<PropertyService> logger)
     : IPropertyService
 {
     public async Task<OwnerPropertyDto> CreateAsync(
@@ -21,6 +26,9 @@ public sealed class PropertyService(
         EnsureOwner();
         await EnsureVerifiedAsync(cancellationToken);
         Validate(request);
+
+        if (request.Publish)
+            throw new ValidationException("Save the property as a draft, attach at least one photo, and then publish it.");
 
         var property = new Property
         {
@@ -35,7 +43,7 @@ public sealed class PropertyService(
             SecurityDeposit = request.SecurityDeposit,
             Bedrooms = request.Bedrooms,
             Bathrooms = request.Bathrooms,
-            Status = request.Publish ? PropertyStatus.Published : PropertyStatus.Draft
+            Status = PropertyStatus.Draft
         };
 
         dbContext.Properties.Add(property);
@@ -49,9 +57,11 @@ public sealed class PropertyService(
         CancellationToken cancellationToken)
     {
         EnsureOwner();
+        await EnsureVerifiedAsync(cancellationToken);
         Validate(request);
 
         var property = await dbContext.Properties
+            .Include(x => x.Photos)
             .SingleOrDefaultAsync(
                 x => x.Id == id && x.OwnerUserId == currentUser.UserId,
                 cancellationToken)
@@ -67,6 +77,9 @@ public sealed class PropertyService(
 
         if (currentSystemStatus && request.Status != property.Status)
             throw new ConflictException("A reserved or occupied property status is managed by the tenancy workflow.");
+
+        if (request.Status == PropertyStatus.Published && property.Photos.Count == 0)
+            throw new ValidationException("Attach at least one property photo before publishing the listing.");
 
         if (string.IsNullOrWhiteSpace(request.RowVersion))
             throw new ValidationException("RowVersion is required.");
@@ -86,6 +99,7 @@ public sealed class PropertyService(
 
         dbContext.Entry(property).Property(x => x.RowVersion).OriginalValue = rowVersion;
 
+        var wasPublished = property.Status == PropertyStatus.Published;
         property.Title = request.Title.Trim();
         property.AddressLine1 = request.AddressLine1.Trim();
         property.Locality = request.Locality.Trim();
@@ -98,6 +112,10 @@ public sealed class PropertyService(
         property.Bathrooms = request.Bathrooms;
         property.Status = request.Status;
 
+        var unavailableTenantIds = wasPublished && request.Status != PropertyStatus.Published
+            ? await CloseOpenApplicationsAsync(property.Id, cancellationToken)
+            : [];
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -107,6 +125,7 @@ public sealed class PropertyService(
             throw new ConflictException("The property was modified by another request. Reload it and retry.");
         }
 
+        await NotifyPropertyUnavailableAsync(property, unavailableTenantIds, cancellationToken);
         return MapOwner(property);
     }
 
@@ -129,8 +148,14 @@ public sealed class PropertyService(
         if (hasOpenTenancy)
             throw new ConflictException("A property with an open tenancy cannot be deleted.");
 
-        dbContext.Properties.Remove(property);
+        var wasAvailable = property.Status == PropertyStatus.Published;
+        property.Status = PropertyStatus.Inactive;
+        var unavailableTenantIds = wasAvailable
+            ? await CloseOpenApplicationsAsync(property.Id, cancellationToken)
+            : [];
+
         await dbContext.SaveChangesAsync(cancellationToken);
+        await NotifyPropertyUnavailableAsync(property, unavailableTenantIds, cancellationToken);
     }
 
     public async Task<PagedResult<OwnerPropertyDto>> GetMineAsync(
@@ -142,6 +167,7 @@ public sealed class PropertyService(
         (page, pageSize) = NormalizePage(page, pageSize);
 
         var query = dbContext.Properties.AsNoTracking()
+            .Include(x => x.Photos)
             .Where(x => x.OwnerUserId == currentUser.UserId)
             .OrderByDescending(x => x.CreatedAtUtc);
 
@@ -164,7 +190,11 @@ public sealed class PropertyService(
         var (page, pageSize) = NormalizePage(request.Page, request.PageSize);
 
         var propertyQuery = dbContext.Properties.AsNoTracking()
-            .Where(x => x.Status == PropertyStatus.Published);
+            .Where(x => x.Status == PropertyStatus.Published &&
+                        x.Photos.Any() &&
+                        x.MonthlyRent >= 500 &&
+                        x.Bedrooms >= 1 && x.Bathrooms >= 1 &&
+                        x.Title != string.Empty && x.Locality != string.Empty && x.City != string.Empty);
 
         if (!string.IsNullOrWhiteSpace(request.City))
             propertyQuery = propertyQuery.Where(x => x.City == request.City.Trim());
@@ -173,10 +203,18 @@ public sealed class PropertyService(
             propertyQuery = propertyQuery.Where(x => x.Locality.Contains(request.Locality.Trim()));
 
         if (request.MaximumRent.HasValue)
+        {
+            if (request.MaximumRent.Value <= 0)
+                throw new ValidationException("Maximum rent must be greater than zero.");
             propertyQuery = propertyQuery.Where(x => x.MonthlyRent <= request.MaximumRent.Value);
+        }
 
         if (request.MinimumBedrooms.HasValue)
+        {
+            if (request.MinimumBedrooms.Value is < 1 or > 20)
+                throw new ValidationException("Minimum bedrooms must be between 1 and 20.");
             propertyQuery = propertyQuery.Where(x => x.Bedrooms >= request.MinimumBedrooms.Value);
+        }
 
         var query =
             from property in propertyQuery
@@ -199,7 +237,8 @@ public sealed class PropertyService(
                 x.property.MonthlyRent,
                 x.property.SecurityDeposit,
                 x.property.Bedrooms,
-                x.property.Bathrooms))
+                x.property.Bathrooms,
+                x.property.Photos.OrderBy(photo => photo.SortOrder).Select(photo => (Guid?)photo.Id).FirstOrDefault()))
             .ToListAsync(cancellationToken);
 
         return new PagedResult<PublicPropertyDto>(items, page, pageSize, total);
@@ -253,7 +292,207 @@ public sealed class PropertyService(
             result.property.Bedrooms,
             result.property.Bathrooms,
             result.property.Status,
-            hasActiveApplication);
+            hasActiveApplication,
+            await dbContext.PropertyPhotos.AsNoTracking()
+                .Where(photo => photo.PropertyId == id)
+                .OrderBy(photo => photo.SortOrder)
+                .Select(photo => new PropertyPhotoDto(
+                    photo.Id,
+                    photo.OriginalFileName,
+                    photo.ContentType,
+                    photo.SizeBytes,
+                    photo.SortOrder))
+                .ToListAsync(cancellationToken));
+    }
+
+    public async Task<PropertyPhotoDto> AddPhotoAsync(
+        Guid propertyId,
+        UploadPropertyPhotoCommand command,
+        CancellationToken cancellationToken)
+    {
+        EnsureOwner();
+        await EnsureVerifiedAsync(cancellationToken);
+        var property = await dbContext.Properties
+            .Include(x => x.Photos)
+            .SingleOrDefaultAsync(
+                x => x.Id == propertyId && x.OwnerUserId == currentUser.UserId,
+                cancellationToken)
+            ?? throw new NotFoundException("Property was not found.");
+
+        if (property.Photos.Count >= 10)
+            throw new ConflictException("A property can contain up to 10 photos.");
+
+        await ValidatePhotoAsync(command, cancellationToken);
+        var objectName = await documentStorage.SaveAsync(
+            currentUser.UserId,
+            command.FileName,
+            command.ContentType,
+            command.Content,
+            cancellationToken);
+
+        try
+        {
+            var photo = new PropertyPhoto
+            {
+                PropertyId = property.Id,
+                StorageObjectName = objectName,
+                OriginalFileName = Path.GetFileName(command.FileName),
+                ContentType = command.ContentType,
+                SizeBytes = command.SizeBytes,
+                SortOrder = property.Photos.Count
+            };
+            dbContext.PropertyPhotos.Add(photo);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new PropertyPhotoDto(photo.Id, photo.OriginalFileName, photo.ContentType, photo.SizeBytes, photo.SortOrder);
+        }
+        catch
+        {
+            await documentStorage.DeleteIfExistsAsync(objectName, CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<StoredPropertyPhoto> OpenPhotoAsync(
+        Guid propertyId,
+        Guid photoId,
+        CancellationToken cancellationToken)
+    {
+        var photo = await dbContext.PropertyPhotos.AsNoTracking()
+            .Include(x => x.Property)
+            .SingleOrDefaultAsync(x => x.Id == photoId && x.PropertyId == propertyId, cancellationToken)
+            ?? throw new NotFoundException("Property photo was not found.");
+
+        var canView = photo.Property.Status == PropertyStatus.Published ||
+                      photo.Property.OwnerUserId == currentUser.UserId ||
+                      await dbContext.RentalApplications.AsNoTracking().AnyAsync(
+                          x => x.PropertyId == propertyId && x.TenantUserId == currentUser.UserId,
+                          cancellationToken) ||
+                      await dbContext.Tenancies.AsNoTracking().AnyAsync(
+                          x => x.PropertyId == propertyId &&
+                               (x.OwnerUserId == currentUser.UserId || x.TenantUserId == currentUser.UserId),
+                          cancellationToken);
+        if (!canView)
+            throw new ForbiddenException("You cannot view this property photo.");
+
+        var stream = await documentStorage.OpenReadAsync(photo.StorageObjectName, cancellationToken);
+        return new StoredPropertyPhoto(stream, photo.ContentType, photo.OriginalFileName);
+    }
+
+    public async Task DeletePhotoAsync(
+        Guid propertyId,
+        Guid photoId,
+        CancellationToken cancellationToken)
+    {
+        EnsureOwner();
+        var photo = await dbContext.PropertyPhotos
+            .Include(x => x.Property)
+            .SingleOrDefaultAsync(
+                x => x.Id == photoId && x.PropertyId == propertyId && x.Property.OwnerUserId == currentUser.UserId,
+                cancellationToken)
+            ?? throw new NotFoundException("Property photo was not found.");
+
+        var photoCount = await dbContext.PropertyPhotos.CountAsync(
+            x => x.PropertyId == propertyId,
+            cancellationToken);
+        if (photoCount <= 1 && photo.Property.Status is PropertyStatus.Published or PropertyStatus.Reserved or PropertyStatus.Occupied)
+            throw new ConflictException("Keep at least one photo while the property is published, reserved or occupied.");
+
+        dbContext.PropertyPhotos.Remove(photo);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await documentStorage.DeleteIfExistsAsync(photo.StorageObjectName, cancellationToken);
+    }
+
+    private static async Task ValidatePhotoAsync(
+        UploadPropertyPhotoCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (command.SizeBytes <= 0 || command.SizeBytes > 8 * 1024 * 1024)
+            throw new ValidationException("Each property photo must be smaller than 8 MB.");
+        var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "image/jpeg", "image/png", "image/webp" };
+        var allowedExtensions = new HashSet<string> { ".jpg", ".jpeg", ".png", ".webp" };
+        if (!allowedTypes.Contains(command.ContentType) || !allowedExtensions.Contains(Path.GetExtension(command.FileName).ToLowerInvariant()))
+            throw new ValidationException("Choose JPG, PNG or WEBP property photos.");
+        if (!command.Content.CanSeek)
+            throw new ValidationException("The selected photo cannot be read.");
+
+        var header = new byte[12];
+        var bytesRead = await command.Content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
+        command.Content.Position = 0;
+        var jpeg = bytesRead >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
+        var png = bytesRead >= 8 && header.Take(8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        var webp = bytesRead >= 12 &&
+                   Encoding.ASCII.GetString(header, 0, 4) == "RIFF" &&
+                   Encoding.ASCII.GetString(header, 8, 4) == "WEBP";
+        var valid = command.ContentType.ToLowerInvariant() switch
+        {
+            "image/jpeg" => jpeg,
+            "image/png" => png,
+            "image/webp" => webp,
+            _ => false
+        };
+        if (!valid)
+            throw new ValidationException("The selected photo does not match its file type.");
+    }
+
+    private async Task<string[]> CloseOpenApplicationsAsync(
+        Guid propertyId,
+        CancellationToken cancellationToken)
+    {
+        var applications = await dbContext.RentalApplications
+            .Where(application => application.PropertyId == propertyId &&
+                                  (application.Status == RentalApplicationStatus.Submitted ||
+                                   application.Status == RentalApplicationStatus.Shortlisted))
+            .ToListAsync(cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var application in applications)
+        {
+            application.Status = RentalApplicationStatus.Closed;
+            application.DecisionAtUtc = now;
+            application.DecisionByUserId = currentUser.UserId;
+            application.DecisionReason = "Property is no longer available.";
+        }
+
+        var conversationTenantIds = await dbContext.ChatConversations.AsNoTracking()
+            .Where(conversation => conversation.PropertyId == propertyId)
+            .Select(conversation => conversation.TenantUserId)
+            .ToListAsync(cancellationToken);
+
+        return applications.Select(application => application.TenantUserId)
+            .Concat(conversationTenantIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private async Task NotifyPropertyUnavailableAsync(
+        Property property,
+        IReadOnlyCollection<string> tenantUserIds,
+        CancellationToken cancellationToken)
+    {
+        foreach (var tenantUserId in tenantUserIds)
+        {
+            try
+            {
+                await chatService.AddSystemMessageAsync(
+                    property.Id,
+                    property.OwnerUserId,
+                    tenantUserId,
+                    "The owner made this property unavailable. Any open application for this property was closed.",
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception notificationException)
+            {
+                logger.LogWarning(
+                    notificationException,
+                    "Property {PropertyId} was made unavailable, but the workflow message could not be written for tenant {TenantUserId}.",
+                    property.Id,
+                    tenantUserId);
+            }
+        }
     }
 
     private void EnsureOwner()
@@ -331,11 +570,19 @@ public sealed class PropertyService(
             throw new ValidationException("One or more property address fields exceed the allowed length.");
         }
 
-        if (monthlyRent <= 0 || deposit < 0)
-            throw new ValidationException("Rent must be positive and deposit cannot be negative.");
+        if (monthlyRent < 500 || monthlyRent > 100_000_000 || deposit < 0 || deposit > 500_000_000)
+            throw new ValidationException("Enter a monthly rent of at least ₹500 and valid non-negative deposit.");
 
-        if (bedrooms is < 0 or > 20 || bathrooms is < 0 or > 20)
-            throw new ValidationException("Bedroom or bathroom count is invalid.");
+        if (bedrooms is < 1 or > 20 || bathrooms is < 1 or > 20)
+            throw new ValidationException("Bedrooms and bathrooms must each be between 1 and 20.");
+
+        var normalizedPostalCode = postalCode.Trim();
+        if (normalizedPostalCode.Length != 6 ||
+            normalizedPostalCode[0] == '0' ||
+            normalizedPostalCode.Any(character => !char.IsDigit(character)))
+        {
+            throw new ValidationException("Enter a valid 6-digit Indian postal code.");
+        }
     }
 
     private static OwnerPropertyDto MapOwner(Property x) =>
@@ -352,6 +599,8 @@ public sealed class PropertyService(
             x.Bedrooms,
             x.Bathrooms,
             x.Status,
+            x.Photos.OrderBy(photo => photo.SortOrder).Select(photo => (Guid?)photo.Id).FirstOrDefault(),
+            x.Photos.Count,
             Convert.ToBase64String(x.RowVersion));
 
     private static (int Page, int PageSize) NormalizePage(int page, int pageSize) =>

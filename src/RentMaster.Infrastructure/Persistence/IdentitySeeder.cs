@@ -39,6 +39,7 @@ public sealed class IdentitySeeder(
             throw new InvalidOperationException("AdminSeed is enabled, but email/password are not configured.");
         }
 
+        email = email.Trim().ToLowerInvariant();
         var user = await userManager.FindByEmailAsync(email);
         if (user is null)
         {
@@ -48,6 +49,7 @@ public sealed class IdentitySeeder(
                 Email = email,
                 EmailConfirmed = true,
                 FullName = "Rent Master Administrator",
+                LockoutEnabled = true,
                 PublicProfileCode = TokenUtilities.CreatePublicProfileCode()
             };
 
@@ -61,7 +63,12 @@ public sealed class IdentitySeeder(
 
         if (!await userManager.IsInRoleAsync(user, AppRoles.Admin))
         {
-            await userManager.AddToRoleAsync(user, AppRoles.Admin);
+            var roleResult = await userManager.AddToRoleAsync(user, AppRoles.Admin);
+            if (!roleResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    $"Unable to assign the admin role: {string.Join(", ", roleResult.Errors.Select(x => x.Description))}");
+            }
         }
     }
 }

@@ -4,16 +4,17 @@ using RentMaster.Application.Interfaces;
 
 namespace RentMaster.Infrastructure.Storage;
 
-public sealed class DevelopmentDocumentStorage : IDocumentStorage
+public sealed class PrivateDocumentStorage : IDocumentStorage
 {
     private readonly string _rootPath;
 
-    public DevelopmentDocumentStorage(IConfiguration configuration)
+    public PrivateDocumentStorage(IConfiguration configuration)
     {
         var configuredPath = configuration["DocumentStorage:RootPath"];
-        _rootPath = string.IsNullOrWhiteSpace(configuredPath)
-            ? Path.Combine(AppContext.BaseDirectory, "private-documents")
-            : Path.GetFullPath(configuredPath);
+        if (string.IsNullOrWhiteSpace(configuredPath))
+            throw new InvalidOperationException("DocumentStorage:RootPath is not configured.");
+
+        _rootPath = Path.GetFullPath(configuredPath);
 
         Directory.CreateDirectory(_rootPath);
     }
@@ -53,7 +54,7 @@ public sealed class DevelopmentDocumentStorage : IDocumentStorage
     {
         var fullPath = ResolveSafePath(objectName);
         if (!File.Exists(fullPath))
-            throw new NotFoundException("Stored identity document was not found.");
+            throw new NotFoundException("Stored file was not found.");
 
         Stream stream = new FileStream(
             fullPath,

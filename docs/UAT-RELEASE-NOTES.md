@@ -1,119 +1,53 @@
-# Rent Master — Local/Dev/UAT Handover
+# UAT release notes
 
-## Included deliverables
+## Authentication and presentation
 
-- `RentMasterFrontend-UAT-Fixed.zip`
-- `RentMasterBackend-UAT-Fixed.zip`
-- Backend browser/API checklist: `docs/UAT-CHECKLIST.md`
-- Backend automated API flow: `scripts/uat-smoke-test.sh`
+- Removed all visible test-account shortcuts, seeded Owner/Tenant accounts and hard-coded UI credentials.
+- Replaced the oversized login lockup with a compact, consistently aligned brand treatment.
+- Replaced sidebar letter abbreviations with accessible line icons.
+- Reworked login and registration copy so every heading, helper and validation message explains a real user action.
+- Added stronger form validation and session-only browser token storage.
 
-## Main corrections
+## Messages
 
-### UI and branding
+- Rebuilt the property-linked message workspace for desktop, tablet and mobile.
+- Added polished conversation icons, search, unread state, timestamps, date dividers, paging and scroll preservation.
+- New messages do not pull the user away while they are reading older messages.
+- Added sent/read indicators and automatic eight-second polling refresh for local/Dev/UAT.
+- Added workflow system messages for applications, tenancy confirmation, scheduled move-in, move-out and final handover.
+- Conversation access is validated on every API operation.
 
-- Removed the oversized logo from the centre of the authenticated top bar.
-- Rebuilt the sidebar brand as a compact icon-and-name lockup.
-- Cropped and centred the icon asset so it no longer appears offset inside its container.
-- Added responsive desktop/mobile navigation and clearer role/profile information.
-- Added consistent loading, empty, success, error and workflow states.
+## Tenancy workflow
 
-### Owner–tenant chat
+- Added `Scheduled` status for a confirmed tenancy whose move-in date is still in the future.
+- A future confirmation keeps the property `Reserved`; it is not marked occupied early.
+- Added Owner-only **Record move-in handover** action on or after the agreed start date.
+- A tenancy beginning today becomes `Active` immediately after Tenant confirmation.
+- Pending and scheduled tenancies can be cancelled before move-in, returning the property to `Published`.
+- Clarified that the preferred lease end is informational and never closes a tenancy automatically.
+- Added explicit move-out request, approval and scheduled-closure states.
+- Restricted final handover completion to the property Owner.
+- Added a per-tenancy `hasReviewed` indicator to prevent misleading repeat-review actions.
 
-- Added private property-linked conversations for Owners and Tenants.
-- Added persisted message history, unread counts, read state, message timestamps and five-second local/UAT polling.
-- Added workflow system messages for applications and tenancies.
-- Enforced participant checks on every conversation/message API operation.
-- Kept one continuous conversation for a property/tenant pair and linked it to the latest application/tenancy lifecycle.
+## Reputation
 
-### Logical tenancy dates
+- Public ratings include published reviews only.
+- Added fractional star rendering, full-dataset rating distribution and category averages.
+- Disputed reviews are removed immediately from every public aggregate.
+- Added Admin disputed-review queue with restore/remove decisions and mandatory resolution notes.
+- Reviews remain linked to completed tenancies and one review per party per tenancy is enforced.
 
-- `Preferred move-in date`: must be today or later.
-- `Planned lease end`: optional planning date; it does not automatically end a tenancy.
-- `Requested move-out date`: supplied by one party with a reason.
-- The requester cannot approve their own move-out request.
-- A future approved date produces `Move-out scheduled`; the property remains occupied.
-- Closure can be completed only on or after the approved date.
-- `Actual move-out` is recorded only when the closure completes.
-- Calendar validation uses the India local date (`Asia/Kolkata`).
+## Identity verification
 
-### Property/application state flow
+- Aadhaar and Passport remain alternatives; only one approved document is required.
+- Added duplicate-document protection across pending and verified accounts.
+- Resubmissions now appear using their latest submission time.
+- Replaced-document cleanup is best effort and can no longer leave the database pointing to a deleted newly uploaded file.
+- Admin document access remains separated from Owner/Tenant visibility.
 
-`Published → Reserved → Occupied → Published`
+## Data and configuration
 
-- Accepting an application reserves the property.
-- The property becomes occupied only after the selected Tenant confirms.
-- Cancelling the pending invitation republishes the property.
-- Completing tenancy closure republishes the property.
-- Other pending applications close when the selected Tenant confirms, and applicants receive a system message.
-
-### Local/UAT setup
-
-The Development environment seeds:
-
-- Admin: `admin@rentmaster.local` / `RentMasterAdmin@2026!`
-- Owner: `owner@rentmaster.local` / `RentMasterDemo@2026!`
-- Tenant: `tenant@rentmaster.local` / `RentMasterDemo@2026!`
-
-It also creates a verified Owner, verified Tenant and a demo property in Thoraipakkam.
-
-Aadhaar **or** Passport approval is sufficient. Verification remains a manual Admin/Moderator action for local/UAT.
-
-## Run locally
-
-### Backend
-
-From the backend root:
-
-```bash
-chmod +x scripts/*.sh
-./scripts/setup-local.sh
-./scripts/run-api.sh
-```
-
-Manual alternative:
-
-```bash
-docker compose up -d
-dotnet restore RentMaster.sln
-dotnet build RentMaster.sln
-dotnet ef database update \
-  --project src/RentMaster.Infrastructure/RentMaster.Infrastructure.csproj \
-  --startup-project src/RentMaster.Api/RentMaster.Api.csproj \
-  --context AppDbContext
-dotnet run --project src/RentMaster.Api/RentMaster.Api.csproj
-```
-
-The default Docker and Development connection-string password are aligned to `MyPassword@123`.
-
-### Frontend
-
-From the frontend root:
-
-```bash
-npm install
-npm start
-```
-
-Open `http://localhost:4200`.
-
-### Automated API workflow
-
-While the API is running:
-
-```bash
-./scripts/uat-smoke-test.sh
-```
-
-## Validation completed in this workspace
-
-- All JSON files parsed successfully.
-- All 38 TypeScript files passed syntax transpilation.
-- All local TypeScript import paths resolved.
-- CSS lexical/bracket validation passed.
-- All 80 C# source files passed lexical/bracket validation.
-- Migration metadata, filtered indexes and shell-script syntax were checked.
-- ZIP contents were cleaned of generated caches/build output.
-
-## Runtime validation limitation
-
-A full Angular build and .NET build/API execution could not be run in this workspace because the .NET SDK is not installed and the available npm mirror does not contain every Angular transitive package. Run the commands above on the Mac before UAT. The included smoke script is designed to verify the complete API workflow after the local build succeeds.
+- Admin setup uses .NET user-secrets through `scripts/configure-local-admin.sh`.
+- Property removal is a safe inactive-state transition. Publishing changes that make a property unavailable close open applications and add a workflow message to existing conversations.
+- Property updates require verified Owner status.
+- The smoke-test script safely JSON-encodes credentials and verifies same-day tenancy activation.

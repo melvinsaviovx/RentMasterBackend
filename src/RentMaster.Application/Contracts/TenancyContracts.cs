@@ -25,4 +25,5 @@ public sealed record TenancyDto(
     string? EndApprovedByUserId,
     DateTimeOffset? EndApprovedAtUtc,
     Guid? ConversationId,
+    bool HasReviewed,
     DateTimeOffset CreatedAtUtc);

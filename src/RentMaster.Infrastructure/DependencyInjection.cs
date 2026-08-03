@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,16 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        var dataProtectionKeysPath = configuration["DataProtection:KeysPath"];
+        if (string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+            throw new InvalidOperationException("DataProtection:KeysPath is not configured.");
+
+        var fullDataProtectionKeysPath = Path.GetFullPath(dataProtectionKeysPath);
+        Directory.CreateDirectory(fullDataProtectionKeysPath);
+        services.AddDataProtection()
+            .SetApplicationName("RentMaster")
+            .PersistKeysToFileSystem(new DirectoryInfo(fullDataProtectionKeysPath));
+
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .Validate(x => !string.IsNullOrWhiteSpace(x.Issuer), "JWT issuer is required.")
@@ -50,14 +61,16 @@ public static class DependencyInjection
                 "Verification minimum approved-document count must be between 1 and the number of accepted document types.")
             .ValidateOnStart();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("DefaultConnection is not configured.");
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException("DefaultConnection is not configured.");
 
-        // services.AddDbContext<AppDbContext>(options =>
-        //     options.UseSqlServer(connectionString, sql =>
-        //         sql.EnableRetryOnFailure(5)));
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlServer(connectionString));
+            options.UseSqlServer(connectionString, sql =>
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null)));
 
 
         services.AddIdentityCore<ApplicationUser>(options =>
@@ -109,11 +122,12 @@ public static class DependencyInjection
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<IReputationService, ReputationService>();
         services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<ISupportService, SupportService>();
         services.AddSingleton<IndiaDateProvider>();
-        services.AddScoped<IDocumentStorage, DevelopmentDocumentStorage>();
+        services.AddScoped<IDocumentStorage, PrivateDocumentStorage>();
         services.AddScoped<JwtTokenService>();
+        services.AddSingleton<IdentityNumberProtector>();
         services.AddScoped<IdentitySeeder>();
-        services.AddScoped<DevelopmentDataSeeder>();
 
         return services;
     }

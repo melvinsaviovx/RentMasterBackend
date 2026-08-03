@@ -21,6 +21,13 @@ public sealed class AdminController(
         CancellationToken cancellationToken = default) =>
         verificationService.GetPendingAsync(page, pageSize, cancellationToken);
 
+    [HttpGet("verification/verified-users")]
+    public Task<PagedResult<VerifiedIdentityUserDto>> VerifiedUsers(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 100,
+        CancellationToken cancellationToken = default) =>
+        verificationService.GetVerifiedUsersAsync(page, pageSize, cancellationToken);
+
     [HttpGet("verification/{documentId:guid}/file")]
     public async Task<IActionResult> DocumentFile(
         Guid documentId,
@@ -42,20 +49,20 @@ public sealed class AdminController(
         return NoContent();
     }
 
-    [HttpGet("reviews/pending")]
-    public Task<PagedResult<PendingReviewDto>> PendingReviews(
+    [HttpGet("reviews/disputed")]
+    public Task<PagedResult<DisputedReviewDto>> DisputedReviews(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default) =>
-        reviewService.GetPendingAsync(page, pageSize, cancellationToken);
+        reviewService.GetDisputedAsync(page, pageSize, cancellationToken);
 
-    [HttpPost("reviews/{reviewId:guid}/decision")]
-    public async Task<IActionResult> DecideReview(
+    [HttpPost("reviews/{reviewId:guid}/resolve-dispute")]
+    public async Task<IActionResult> ResolveReviewDispute(
         Guid reviewId,
-        ReviewDecisionRequest request,
+        ResolveReviewDisputeRequest request,
         CancellationToken cancellationToken)
     {
-        await reviewService.DecideAsync(reviewId, request, cancellationToken);
+        await reviewService.ResolveDisputeAsync(reviewId, request, cancellationToken);
         return NoContent();
     }
 }

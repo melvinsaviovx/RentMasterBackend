@@ -37,3 +37,20 @@ public sealed record PendingReviewDto(
     IReadOnlyList<ReviewScoreDto> Scores,
     string? Comment,
     DateTimeOffset SubmittedAtUtc);
+
+public sealed record DisputedReviewDto(
+    Guid ReviewId,
+    Guid DisputeId,
+    Guid TenancyId,
+    string ReviewerUserId,
+    string SubjectUserId,
+    ReviewDirection Direction,
+    int OverallRating,
+    IReadOnlyList<ReviewScoreDto> Scores,
+    string? Comment,
+    string DisputeReason,
+    DateTimeOffset RaisedAtUtc);
+
+public sealed record ResolveReviewDisputeRequest(
+    bool Republish,
+    string Resolution);

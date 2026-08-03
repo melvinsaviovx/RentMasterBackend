@@ -41,6 +41,8 @@ public sealed class AuthService(
             throw new ValidationException("Email is required.");
         if (string.IsNullOrWhiteSpace(request.PhoneNumber))
             throw new ValidationException("Phone number is required.");
+
+        var phoneNumber = NormalizeIndianPhoneNumber(request.PhoneNumber);
         if (string.IsNullOrWhiteSpace(request.Password))
             throw new ValidationException("Password is required.");
 
@@ -48,13 +50,17 @@ public sealed class AuthService(
         if (await userManager.FindByEmailAsync(email) is not null)
             throw new ConflictException("An account already exists for this email.");
 
+        if (await dbContext.Users.AnyAsync(x => x.PhoneNumber == phoneNumber, cancellationToken))
+            throw new ConflictException("An account already exists for this mobile number.");
+
         var publicProfileCode = await CreateUniquePublicProfileCodeAsync(cancellationToken);
 
         var user = new ApplicationUser
         {
             UserName = email,
             Email = email,
-            PhoneNumber = request.PhoneNumber.Trim(),
+            PhoneNumber = phoneNumber,
+            LockoutEnabled = true,
             FullName = request.FullName.Trim(),
             PublicProfileCode = publicProfileCode
         };
@@ -191,6 +197,18 @@ public sealed class AuthService(
             token.RevokedByIp = ipAddress;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private static string NormalizeIndianPhoneNumber(string value)
+    {
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        if (digits.Length == 12 && digits.StartsWith("91", StringComparison.Ordinal))
+            digits = digits[2..];
+
+        if (digits.Length != 10 || digits[0] is < '6' or > '9')
+            throw new ValidationException("Enter a valid 10-digit Indian mobile number.");
+
+        return $"+91{digits}";
     }
 
     private async Task<string> CreateUniquePublicProfileCodeAsync(

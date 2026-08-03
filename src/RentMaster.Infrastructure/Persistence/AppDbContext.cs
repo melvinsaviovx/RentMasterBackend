@@ -22,6 +22,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<PropertyPhoto> PropertyPhotos => Set<PropertyPhoto>();
+    public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -46,6 +48,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureBaseEntity<RefreshToken>(builder);
         ConfigureBaseEntity<ChatConversation>(builder);
         ConfigureBaseEntity<ChatMessage>(builder);
+        ConfigureBaseEntity<PropertyPhoto>(builder);
+        ConfigureBaseEntity<SupportTicket>(builder);
 
         builder.Entity<OwnerProfile>(entity =>
         {
@@ -69,7 +73,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         builder.Entity<IdentityDocument>(entity =>
         {
             entity.HasIndex(x => new { x.UserId, x.DocumentType }).IsUnique();
-            entity.HasIndex(x => x.NumberHash);
+            entity.HasIndex(x => new { x.DocumentType, x.NumberHash })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0 AND [Status] IN (1, 2)");
+            entity.Property(x => x.DocumentNumber).HasMaxLength(2048);
             entity.Property(x => x.NumberLast4).HasMaxLength(4);
             entity.Property(x => x.NumberHash).HasMaxLength(128);
             entity.Property(x => x.StorageObjectName).HasMaxLength(500);
@@ -98,6 +105,33 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<ApplicationUser>()
                 .WithMany()
                 .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+
+        builder.Entity<PropertyPhoto>(entity =>
+        {
+            entity.Property(x => x.StorageObjectName).HasMaxLength(500);
+            entity.Property(x => x.OriginalFileName).HasMaxLength(255);
+            entity.Property(x => x.ContentType).HasMaxLength(100);
+            entity.HasIndex(x => new { x.PropertyId, x.SortOrder });
+            entity.HasOne(x => x.Property)
+                .WithMany(x => x.Photos)
+                .HasForeignKey(x => x.PropertyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SupportTicket>(entity =>
+        {
+            entity.Property(x => x.Category).HasMaxLength(80);
+            entity.Property(x => x.Subject).HasMaxLength(160);
+            entity.Property(x => x.Description).HasMaxLength(3000);
+            entity.Property(x => x.AdminReply).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -135,7 +169,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasIndex(x => new { x.PropertyId, x.Status });
             entity.HasIndex(x => x.PropertyId)
                 .IsUnique()
-                .HasFilter("[IsDeleted] = 0 AND [Status] IN (1, 2, 3, 6)");
+                .HasFilter("[IsDeleted] = 0 AND [Status] IN (1, 2, 3, 6, 7)");
             entity.HasOne(x => x.Property)
                 .WithMany(x => x.Tenancies)
                 .HasForeignKey(x => x.PropertyId)

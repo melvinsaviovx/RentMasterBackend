@@ -22,6 +22,11 @@ public sealed class TenanciesController(ITenancyService tenancyService) : Contro
     public Task<TenancyDto> Confirm(Guid id, CancellationToken cancellationToken) =>
         tenancyService.ConfirmAsync(id, cancellationToken);
 
+    [HttpPost("{id:guid}/activate")]
+    [Authorize(Roles = AppRoles.Owner)]
+    public Task<TenancyDto> Activate(Guid id, CancellationToken cancellationToken) =>
+        tenancyService.ActivateAsync(id, cancellationToken);
+
     [HttpPost("{id:guid}/cancel-pending")]
     public Task<TenancyDto> CancelPending(Guid id, CancellationToken cancellationToken) =>
         tenancyService.CancelPendingAsync(id, cancellationToken);

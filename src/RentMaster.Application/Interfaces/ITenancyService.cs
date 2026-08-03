@@ -6,6 +6,7 @@ namespace RentMaster.Application.Interfaces;
 public interface ITenancyService
 {
     Task<TenancyDto> ConfirmAsync(Guid tenancyId, CancellationToken cancellationToken);
+    Task<TenancyDto> ActivateAsync(Guid tenancyId, CancellationToken cancellationToken);
     Task<TenancyDto> CancelPendingAsync(Guid tenancyId, CancellationToken cancellationToken);
     Task<TenancyDto> RequestEndAsync(Guid tenancyId, RequestTenancyEndRequest request, CancellationToken cancellationToken);
     Task<TenancyDto> CancelEndRequestAsync(Guid tenancyId, CancellationToken cancellationToken);

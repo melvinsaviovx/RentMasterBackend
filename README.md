@@ -1,257 +1,157 @@
-# Rent Master Backend — Phase 1
+# Rent Master Backend
 
-ASP.NET Core/.NET 10 backend for a house-rental platform using EF Core, SQL Server, ASP.NET Core Identity and JWT authentication.
+ASP.NET Core/.NET 10 API for the Rent Master local, Development and UAT rental workflow.
 
 ## Implemented modules
 
 - Owner and Tenant registration/login
 - JWT access tokens and rotating hashed refresh tokens
-- Role-based authorization with a global authenticated-user policy
-- Private Aadhaar/passport submission and admin verification
-- Owner property creation, update, listing and soft deletion
-- Tenant property search and rental applications
-- Owner shortlist, reject and accept workflow with Published → Reserved → Occupied property states
-- Tenant tenancy confirmation with India-local calendar validation
-- Owner–tenant property chat with persisted messages and workflow updates
-- Date-based two-party tenancy closure with requester withdrawal and scheduled completion
-- Post-tenancy owner/tenant reviews
-- Review moderation and disputes
-- Public reputation profiles
-- Audit logging, rate limiting, CORS, health checks and safe Problem Details
-- SQL Server rowversion concurrency and filtered unique indexes
+- Role-based authorization with an authenticated-user fallback policy
+- Manual Aadhaar or Passport verification
+- Duplicate identity-document protection across pending and verified accounts
+- Admin KYC review with safe resubmission handling
+- Property lifecycle: Draft → Published → Reserved → Occupied → Published
+- Tenancy lifecycle: Pending confirmation → Scheduled or Active → Move-out scheduled → Ended
+- Rental applications and tenancy invitations
+- Property-linked Owner–Tenant messages with persisted history, unread counts, read state and automatic polling refresh
+- Future move-in scheduling with Owner-recorded handover
+- Mutually approved move-out scheduling
+- Owner-recorded final handover
+- Automatically published post-tenancy reviews, concern reporting, Admin decisions and public reputation totals
+- Row-version concurrency, audit logging, rate limiting, CORS and health checks
+
+No Owner or Tenant test accounts are seeded. The login UI contains no shortcut credentials.
 
 ## Requirements
 
-- .NET SDK 10.0.302 or a compatible 10.0.3xx patch
-- Docker Desktop, or another SQL Server instance
-- macOS, Linux or Windows
+- .NET SDK 10.0.302 or compatible .NET 10 SDK
+- Docker Desktop or an accessible SQL Server
 
-## Project structure
+## Local setup
 
-```text
-src/RentMaster.Api
-src/RentMaster.Application
-src/RentMaster.Domain
-src/RentMaster.Infrastructure
-```
-
-## First-time setup on macOS
-
-Run every command below from the repository root—the directory containing `RentMaster.sln`.
-
-### Easiest setup
+Run from the directory containing `RentMaster.sln`:
 
 ```bash
 chmod +x scripts/*.sh
+cp .env.example .env
 ./scripts/setup-local.sh
+```
+
+Configure a local Admin account in .NET user-secrets:
+
+```bash
+./scripts/configure-local-admin.sh
+```
+
+Start the API:
+
+```bash
 ./scripts/run-api.sh
 ```
 
-The setup script starts SQL Server, restores and builds the solution, creates `InitialCreate` when no migration exists, and applies the database migration.
-
-### 1. Start SQL Server
-
-```bash
-cp .env.example .env
-docker compose up -d
-
-docker ps
-```
-
-The default local credentials are:
+The default local API URL is:
 
 ```text
-Server: localhost,1433
-Database: RentMasterDb
-User: sa
-Password: MyPassword@123
+http://localhost:5085
 ```
 
-To use another password, change both `.env` and the development connection string through user-secrets or an environment variable.
+Health endpoint:
 
-### 2. Restore tools and packages
+```text
+http://localhost:5085/health
+```
+
+OpenAPI document in Development:
+
+```text
+http://localhost:5085/openapi/v1.json
+```
+
+## Account setup for UAT
+
+1. Configure the Admin using `scripts/configure-local-admin.sh`.
+2. Start the API once so the Admin seed executes.
+3. Register Owner and Tenant accounts through the Angular registration page.
+4. Upload Aadhaar or Passport from each account.
+5. Sign in as Admin and approve the documents.
+6. Optionally disable repeated Admin seeding:
 
 ```bash
-dotnet --version
-dotnet tool restore
-dotnet restore RentMaster.sln
-dotnet build RentMaster.sln
+dotnet user-secrets set --project src/RentMaster.Api/RentMaster.Api.csproj "AdminSeed:Enabled" "false"
 ```
 
-### 3. Create the initial migration
+## Database commands
+
+Create a migration:
 
 ```bash
-./scripts/create-migration.sh InitialCreate
+./scripts/create-migration.sh MigrationName
 ```
 
-Equivalent manual command:
-
-```bash
-dotnet ef migrations add InitialCreate \
-  --project src/RentMaster.Infrastructure/RentMaster.Infrastructure.csproj \
-  --startup-project src/RentMaster.Api/RentMaster.Api.csproj \
-  --context AppDbContext \
-  --output-dir Persistence/Migrations
-```
-
-### 4. Create/update the database
+Apply migrations:
 
 ```bash
 ./scripts/update-database.sh
 ```
 
-Equivalent manual command:
+## Automated workflow test
+
+The smoke test expects existing verified Owner and Tenant accounts. It creates its own property, application, conversation and tenancy data.
 
 ```bash
-dotnet ef database update \
-  --project src/RentMaster.Infrastructure/RentMaster.Infrastructure.csproj \
-  --startup-project src/RentMaster.Api/RentMaster.Api.csproj \
-  --context AppDbContext
+OWNER_EMAIL='owner-email' \
+TENANT_EMAIL='tenant-email' \
+UAT_PASSWORD='shared-test-password' \
+./scripts/uat-smoke-test.sh
 ```
 
-### 5. Run the API
+The script validates:
 
-```bash
-./scripts/run-api.sh
-```
+- API health and authentication
+- Property creation
+- Property conversation and messages
+- Application submission, shortlist and acceptance
+- Reserved and occupied property states
+- Same-day tenancy activation after confirmation
+- Tenancy confirmation
+- Move-out request and approval
+- Owner final handover
+- Property re-publication
+- Workflow messages in chat history
+- Immediate publication of post-tenancy reviews
+- Review reporting without automatic removal from the public rating
 
-OpenAPI JSON is available in Development at:
+## Tenancy date rules
 
-```text
-/openapi/v1.json
-```
+- Tenant confirmation reserves a future move-in as `Scheduled`; it does not mark the property occupied early.
+- On or after the agreed start date, the Owner records move-in handover and the tenancy becomes `Active`.
+- A tenancy starting today becomes `Active` immediately when the Tenant confirms.
+- A pending or scheduled tenancy can be cancelled before move-in and the property returns to `Published`.
+- `ExpectedEndDate` is a planning preference only.
+- It does not automatically close or change property availability.
+- Either party may request a move-out date while the tenancy is active.
+- The other party must approve the date.
+- The tenancy remains occupied while move-out is scheduled.
+- Only the Owner records final possession/key handover on or after the approved date.
+- `ActualEndDate` is written only when final handover is completed.
 
-The health endpoint is:
+## Messaging rules
 
-```text
-/health
-```
+- A conversation is created only in the context of a property, application or tenancy.
+- Messages are persisted in SQL Server and refreshed automatically through polling.
+- Every message action verifies that the signed-in user belongs to the conversation.
+- System messages record application and tenancy workflow changes.
 
-## Configuration
+## Reputation rules
 
-Development values are in:
+- A user can submit one review per completed tenancy after both parties approve closure and the final handover is recorded.
+- A submitted review is published immediately and included in the public rating.
+- The reviewed person may report a review with a specific reason.
+- Reporting alone does not remove or hide the review.
+- An authorised Admin may keep or remove a reported review and must record a decision note.
 
-```text
-src/RentMaster.Api/appsettings.Development.json
-```
+## Local-only configuration
 
-For local overrides, prefer user-secrets:
+Development SQL, JWT and verification secrets in `appsettings.Development.json` are local placeholders. Do not reuse them in a deployed environment. Use user-secrets locally and a managed secret provider for deployments.
 
-```bash
-dotnet user-secrets set --project src/RentMaster.Api \
-  "ConnectionStrings:DefaultConnection" \
-  "Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=YOUR_PASSWORD;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;"
-
-dotnet user-secrets set --project src/RentMaster.Api \
-  "Jwt:SigningKey" \
-  "USE-A-RANDOM-KEY-WITH-AT-LEAST-64-CHARACTERS"
-
-dotnet user-secrets set --project src/RentMaster.Api \
-  "Verification:NumberHashPepper" \
-  "USE-A-DIFFERENT-RANDOM-SECRET-WITH-AT-LEAST-32-CHARACTERS"
-```
-
-The EF design-time factory checks `RENTMASTER_SQL_CONNECTION` first, then loads the API development settings. Example:
-
-```bash
-export RENTMASTER_SQL_CONNECTION='Server=localhost,1433;Database=RentMasterDb;User Id=sa;Password=MyPassword@123;Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;'
-```
-
-## Local admin and KYC review
-
-The Development configuration seeds local-only UAT accounts automatically:
-
-```text
-Admin: admin@rentmaster.local / RentMasterAdmin@2026!
-Owner: owner@rentmaster.local / RentMasterDemo@2026!
-Tenant: tenant@rentmaster.local / RentMasterDemo@2026!
-```
-
-Start/restart the API, sign in through the Angular login page, and open **KYC moderation**. The Admin can preview pending PDF/JPEG/PNG files and approve them or reject them with a mandatory correction reason.
-
-The base `appsettings.json` keeps seeding disabled, so this account is not created in non-Development environments unless explicitly configured. Never use the development password in a deployed environment.
-
-For the complete process and security notes, read:
-
-```text
-docs/KYC-REVIEW-GUIDE.md
-```
-
-## Main endpoints
-
-### Authentication
-
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
-- `POST /api/v1/auth/logout`
-
-### Verification
-
-- `POST /api/v1/verification/documents`
-- `GET /api/v1/verification/status`
-- `GET /api/v1/admin/verification/pending`
-- `GET /api/v1/admin/verification/{documentId}/file`
-- `POST /api/v1/admin/verification/{documentId}/decision`
-
-### Properties and applications
-
-- `POST /api/v1/properties`
-- `GET /api/v1/properties/mine`
-- `GET /api/v1/properties/search`
-- `GET /api/v1/properties/{propertyId}`
-- `PUT /api/v1/properties/{propertyId}`
-- `DELETE /api/v1/properties/{propertyId}`
-- `POST /api/v1/properties/{propertyId}/applications`
-- `GET /api/v1/applications/mine`
-- `GET /api/v1/properties/{propertyId}/applications`
-- `POST /api/v1/applications/{applicationId}/shortlist`
-- `POST /api/v1/applications/{applicationId}/accept`
-- `POST /api/v1/applications/{applicationId}/reject`
-- `POST /api/v1/applications/{applicationId}/withdraw`
-
-### Tenancies and reviews
-
-- `GET /api/v1/tenancies/mine`
-- `POST /api/v1/tenancies/{tenancyId}/confirm`
-- `POST /api/v1/tenancies/{tenancyId}/cancel-pending`
-- `POST /api/v1/tenancies/{tenancyId}/request-end`
-- `POST /api/v1/tenancies/{tenancyId}/cancel-end-request`
-- `POST /api/v1/tenancies/{tenancyId}/confirm-end`
-- `POST /api/v1/tenancies/{tenancyId}/complete-end`
-- `POST /api/v1/reviews`
-- `POST /api/v1/reviews/{reviewId}/dispute`
-- `GET /api/v1/reputation/{profileCode}`
-- `GET /api/v1/admin/reviews/pending`
-- `POST /api/v1/admin/reviews/{reviewId}/decision`
-
-
-### Chat
-
-- `POST /api/v1/chat/properties/{propertyId}/open`
-- `GET /api/v1/chat/conversations`
-- `GET /api/v1/chat/conversations/{conversationId}/messages`
-- `POST /api/v1/chat/conversations/{conversationId}/messages`
-- `POST /api/v1/chat/conversations/{conversationId}/read`
-
-For the complete local workflow and automated API validation, see `docs/UAT-CHECKLIST.md` and run `./scripts/uat-smoke-test.sh` while the API is running.
-
-## Production requirements
-
-- Replace local document storage with private encrypted Blob storage.
-- Store SQL, JWT and verification secrets outside source control.
-- Enable confirmed email/phone flows.
-- Add malware scanning and retention/deletion policies for identity documents.
-- Put the API behind a WAF/reverse proxy and configure trusted forwarded headers.
-- Keep `Database:ApplyMigrationsOnStartup` disabled in production and run reviewed migrations during deployment.
-
-## Identity verification rule
-
-The default Phase 1 rule accepts Aadhaar or Passport. The API returns both accepted document types, but the account becomes verified after any one of them is approved by an Admin or Moderator.
-
-```json
-"Verification": {
-  "RequiredDocuments": ["Aadhaar", "Passport"],
-  "MinimumVerifiedDocuments": 1
-}
-```
+This package is prepared for local/Dev/UAT validation. A production launch still requires environment-specific security, privacy, storage, monitoring, backup and deployment review.

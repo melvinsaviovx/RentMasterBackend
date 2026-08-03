@@ -11,7 +11,7 @@ public sealed class Review : BaseEntity
     public ReviewDirection Direction { get; set; }
     public int OverallRating { get; set; }
     public string? Comment { get; set; }
-    public ReviewStatus Status { get; set; } = ReviewStatus.PendingModeration;
+    public ReviewStatus Status { get; set; } = ReviewStatus.Published;
     public string? ModerationReason { get; set; }
     public string? ModeratedByUserId { get; set; }
     public DateTimeOffset? ModeratedAtUtc { get; set; }

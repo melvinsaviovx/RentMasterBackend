@@ -1,111 +1,109 @@
-# Rent Master local/UAT checklist
+# Rent Master UAT checklist
 
-## Seeded accounts
+## Preparation
 
-| Role | Email | Password |
-|---|---|---|
-| Admin | `admin@rentmaster.local` | `RentMasterAdmin@2026!` |
-| Owner | `owner@rentmaster.local` | `RentMasterDemo@2026!` |
-| Tenant | `tenant@rentmaster.local` | `RentMasterDemo@2026!` |
+- [ ] SQL Server is running.
+- [ ] Database migrations are applied.
+- [ ] Admin is configured through `scripts/configure-local-admin.sh`.
+- [ ] Frontend starts at `http://localhost:4200`.
+- [ ] API health returns success at `http://localhost:5085/health`.
+- [ ] Browser console has no uncaught errors during the tested flow.
+- [ ] Test at desktop, tablet and mobile browser widths.
 
-The owner and tenant are manually marked verified and a demo Thoraipakkam property is created only in the Development environment.
+## Authentication and visual quality
 
-## Start locally
+- [ ] Owner registration succeeds.
+- [ ] Tenant registration succeeds.
+- [ ] Duplicate email and duplicate mobile number are rejected.
+- [ ] Invalid password and invalid email messages are clear.
+- [ ] Session refresh works and logout clears the session.
+- [ ] No test credentials or account shortcuts appear on the login page.
+- [ ] Login logo is compact, aligned and does not stretch or crop.
+- [ ] Sidebar icons, active state, mobile menu and profile section remain aligned.
+- [ ] Keyboard focus is visible on links, inputs and buttons.
 
-1. Start SQL Server using the included `docker-compose.yml`, or update `appsettings.Development.json` for your local SQL Server.
-2. Run the API:
-   ```bash
-   cd src/RentMaster.Api
-   dotnet restore
-   dotnet ef database update --project ../RentMaster.Infrastructure/RentMaster.Infrastructure.csproj --startup-project RentMaster.Api.csproj
-   dotnet run
-   ```
-3. Run the Angular UI in the frontend folder:
-   ```bash
-   npm install
-   npm start
-   ```
-4. Open `http://localhost:4200`.
+## Verification
 
-`Database:ApplyMigrationsOnStartup` is enabled in Development, so `dotnet run` also applies pending migrations. The explicit database-update command is useful when troubleshooting.
+- [ ] Aadhaar or Passport may be submitted.
+- [ ] Only one approved document is required.
+- [ ] The same pending or verified document cannot be linked to another account.
+- [ ] Admin can preview, approve and reject.
+- [ ] Rejection requires a reason.
+- [ ] Rejected documents can be resubmitted and show the latest submission time.
+- [ ] A failed old-file cleanup does not invalidate the newly saved resubmission.
+- [ ] Non-admin users cannot access private document files.
 
-## Automated API smoke test
+## Properties and applications
 
-With the API running at `http://localhost:5085`:
+- [ ] Verified Owner can create, publish, edit and deactivate a property.
+- [ ] Unverified Owner cannot create or update a property.
+- [ ] Search filters reject invalid rent and bedroom values.
+- [ ] Reserved, occupied and inactive properties do not accept new applications.
+- [ ] Making a published property Draft or Inactive closes submitted/shortlisted applications and writes a workflow message.
+- [ ] Verified Tenant can open a property conversation.
+- [ ] Application message cannot contain only spaces.
+- [ ] Owner can shortlist, reject and accept an application.
+- [ ] Acceptance reserves the property.
 
-```bash
-./scripts/uat-smoke-test.sh
-```
+## Messages
 
-The script creates an isolated property and validates:
+- [ ] Conversation search works by user, profile code and property.
+- [ ] Text is persisted after refresh.
+- [ ] Empty and over-limit messages are blocked.
+- [ ] Unread count clears after opening the conversation.
+- [ ] Sender sees **Sent**, then **Read** after the recipient opens the conversation.
+- [ ] Earlier-message paging keeps the current scroll position.
+- [ ] New messages do not force-scroll a user who is reading older messages.
+- [ ] Date dividers and message times are correct in the local timezone.
+- [ ] System messages appear for application and tenancy workflow changes.
+- [ ] A non-participant cannot access a conversation or its messages.
+- [ ] Desktop and mobile conversation layouts remain usable without horizontal overflow.
+- [ ] Automatic polling updates the open conversation without duplicate messages.
 
-1. Owner and tenant login
-2. Property creation and publishing
-3. Tenant opens chat and sends a message
-4. Tenant submits an application
-5. Owner shortlists and accepts it
-6. Accepted application reserves the property
-7. Tenant confirms the tenancy and property becomes occupied
-8. Owner replies in chat
-9. Tenant requests move-out
-10. Owner approves closure
-11. Actual end date, republished property, and ended status
-12. Workflow system messages in the same conversation
+## Move-in and tenancy dates
 
-## Browser test flow
+- [ ] Confirming a tenancy starting today makes it `Active` and the property `Occupied`.
+- [ ] Confirming a future move-in makes it `Scheduled` and keeps the property `Reserved`.
+- [ ] Owner cannot record move-in handover before the start date.
+- [ ] Tenant cannot record move-in handover.
+- [ ] Owner can record handover on or after the start date, making the tenancy `Active` and property `Occupied`.
+- [ ] A pending or scheduled tenancy can be cancelled before move-in.
+- [ ] Cancelling before move-in returns the property to `Published`.
+- [ ] Preferred lease end is shown as a planning reference only.
 
-### Tenant
+## Move-out and closure
 
-- Use the Tenant demo account button on the login page.
-- Search and open the demo property.
-- Confirm that the exact street address is not public.
-- Click **Message owner**, send a message, refresh, and confirm history remains.
-- Submit an application with today/future move-in.
-- Verify a planned lease end is optional and cannot be on/before move-in.
+- [ ] Either party can request a move-out date for an active tenancy.
+- [ ] The requester may withdraw before approval.
+- [ ] The other party must approve the date.
+- [ ] Future approved dates keep the tenancy occupied.
+- [ ] Tenant cannot record final handover.
+- [ ] Owner cannot record handover before the approved date.
+- [ ] Owner can complete final handover on or after the approved date.
+- [ ] Actual end date is set only at final handover.
+- [ ] Property returns to `Published` after closure.
 
-### Owner
+## Reviews and reputation
 
-- Sign in as Owner.
-- Open **My properties → Applications**.
-- Confirm applicant Aadhaar/passport, phone, and email are not shown.
-- Shortlist, chat, and accept one application.
-- Confirm that Accept creates a pending invitation, changes the property to **Reserved**, and does not yet mark it occupied.
+- [ ] Reviews are unavailable before tenancy closure.
+- [ ] Each party can review once per tenancy.
+- [ ] Duplicate review attempts are rejected.
+- [ ] All overall and category ratings require values from 1 to 5.
+- [ ] New reviews remain pending until moderation.
+- [ ] Fractional average stars render consistently with the numeric rating.
+- [ ] Published review count, average, distribution and category averages agree.
+- [ ] Disputing a review immediately removes it from public totals and averages.
+- [ ] Admin can restore or remove a disputed review with a reason.
+- [ ] Review button changes to **Review submitted** after submission.
+- [ ] Public lookup accepts profile code only—not email, phone, Aadhaar or Passport.
 
-### Tenant confirmation
+## Final checks before sharing
 
-- Sign in as Tenant and open **Tenancies**.
-- Confirm the invitation.
-- Verify the property becomes occupied and other open applications close.
-
-### Move-out logic
-
-- On an active tenancy, request closure with a date and reason.
-- Verify the requester can withdraw, but cannot approve their own request.
-- As the other party, approve the request.
-- For a future date, verify status becomes **Move-out scheduled** and the property stays occupied.
-- On/after that date, click **Complete tenancy**.
-- For today's date, approval completes immediately.
-- Confirm `Actual move-out` equals the approved date, the property returns to Published, and reviews become available.
-
-### Admin
-
-- Sign in as Admin.
-- Review KYC and review-moderation pages.
-- Confirm private documents are available only in the moderation workflow.
-
-## Expected date meaning
-
-- **Preferred move-in:** requested by the tenant and must be today or later.
-- **Planned lease end:** optional planning information from the application. It never closes a tenancy automatically.
-- **Requested move-out:** the date proposed by one tenancy party.
-- **Actual move-out:** recorded only after both parties approve and closure is completed.
-
-
-## Reservation rule
-
-- **Published:** visible in search and open for applications.
-- **Reserved:** one application has been accepted; only linked participants can open the property details.
-- **Occupied:** the selected tenant confirmed the tenancy.
-- **Published again:** pending invitation is cancelled or the completed tenancy ends.
-
-Calendar validations use the India local date (Asia/Kolkata), avoiding UTC date changes around midnight.
+- [ ] `npm ci` passes.
+- [ ] `npm run build:production` passes.
+- [ ] `dotnet restore RentMaster.sln` passes.
+- [ ] `dotnet build RentMaster.sln --no-restore` passes.
+- [ ] `./scripts/uat-smoke-test.sh` passes with verified test accounts.
+- [ ] No TODO/FIXME markers remain in application source.
+- [ ] No hard-coded login credentials appear in source or browser UI.
+- [ ] No `bin`, `obj`, `node_modules`, `.angular`, `.git`, `.env` or local document files are included in the handoff ZIPs.

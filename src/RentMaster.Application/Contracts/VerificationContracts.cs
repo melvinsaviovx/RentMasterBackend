@@ -16,7 +16,7 @@ public sealed record SubmitIdentityDocumentCommand(
 public sealed record IdentityDocumentDto(
     Guid Id,
     IdentityDocumentType DocumentType,
-    string MaskedNumber,
+    string DocumentNumber,
     VerificationStatus Status,
     string? RejectionReason,
     DateTimeOffset SubmittedAtUtc,
@@ -38,11 +38,29 @@ public sealed record PendingIdentityDocumentDto(
     string UserFullName,
     string UserEmail,
     IdentityDocumentType DocumentType,
-    string MaskedNumber,
+    string DocumentNumber,
     string OriginalFileName,
     string ContentType,
     long SizeBytes,
     DateTimeOffset SubmittedAtUtc);
+
+public sealed record VerifiedIdentityDocumentDto(
+    Guid Id,
+    IdentityDocumentType DocumentType,
+    string DocumentNumber,
+    string OriginalFileName,
+    string ContentType,
+    DateTimeOffset VerifiedAtUtc);
+
+public sealed record VerifiedIdentityUserDto(
+    string UserId,
+    string UserFullName,
+    string UserEmail,
+    string UserPhoneNumber,
+    IReadOnlyList<string> Roles,
+    string PublicProfileCode,
+    DateTimeOffset VerifiedAtUtc,
+    IReadOnlyList<VerifiedIdentityDocumentDto> Documents);
 
 public sealed record StoredDocumentFile(
     Stream Content,

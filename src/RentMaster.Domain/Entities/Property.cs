@@ -18,6 +18,7 @@ public sealed class Property : BaseEntity
     public int Bathrooms { get; set; }
     public PropertyStatus Status { get; set; } = PropertyStatus.Draft;
 
+    public ICollection<PropertyPhoto> Photos { get; set; } = [];
     public ICollection<Tenancy> Tenancies { get; set; } = [];
     public ICollection<RentalApplication> RentalApplications { get; set; } = [];
 }

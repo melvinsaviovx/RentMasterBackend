@@ -1,4 +1,3 @@
-using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using RentMaster.Application.Common;
@@ -141,10 +140,6 @@ public sealed class RentalApplicationService(
     {
         EnsureOwner();
         await EnsureVerifiedAsync(currentUser.UserId, cancellationToken);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
         var application = await dbContext.RentalApplications
             .Include(x => x.Property)
             .SingleOrDefaultAsync(x => x.Id == applicationId, cancellationToken)
@@ -183,36 +178,64 @@ public sealed class RentalApplicationService(
             AgreedSecurityDeposit = application.Property.SecurityDeposit
         };
 
+        var conversation = await dbContext.ChatConversations
+            .SingleOrDefaultAsync(
+                x => x.PropertyId == application.PropertyId &&
+                     x.OwnerUserId == currentUser.UserId &&
+                     x.TenantUserId == application.TenantUserId,
+                cancellationToken);
+
+        if (conversation is null)
+        {
+            conversation = new ChatConversation
+            {
+                PropertyId = application.PropertyId,
+                OwnerUserId = currentUser.UserId,
+                TenantUserId = application.TenantUserId,
+                RentalApplicationId = application.Id
+            };
+            dbContext.ChatConversations.Add(conversation);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
         dbContext.Tenancies.Add(tenancy);
         application.Property.Status = PropertyStatus.Reserved;
         application.Status = RentalApplicationStatus.Accepted;
-        application.DecisionAtUtc = DateTimeOffset.UtcNow;
+        application.DecisionAtUtc = now;
         application.DecisionByUserId = currentUser.UserId;
         application.DecisionReason = NormalizeReason(request.Reason);
+        application.TenancyId = tenancy.Id;
         application.Tenancy = tenancy;
+
+        conversation.RentalApplicationId = application.Id;
+        conversation.TenancyId = tenancy.Id;
+        conversation.LastMessageAtUtc = now;
+
+        dbContext.ChatMessages.Add(new ChatMessage
+        {
+            ConversationId = conversation.Id,
+            SenderUserId = currentUser.UserId,
+            Content = "The owner accepted the application. The tenant must confirm the tenancy invitation.",
+            IsSystemMessage = true
+        });
 
         try
         {
+            // A single save keeps the application, property reservation, tenancy
+            // invitation and conversation update consistent. SaveChanges already
+            // uses a database transaction, so a separate user transaction is not
+            // needed here.
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictException("This application changed while you were reviewing it. Refresh the page and try again.");
         }
         catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
         {
             throw new ConflictException("The property already has an accepted or active tenancy.");
         }
-
-        await chatService.AttachTenancyAsync(
-            application.PropertyId,
-            currentUser.UserId,
-            application.TenantUserId,
-            tenancy.Id,
-            cancellationToken);
-        await chatService.AddSystemMessageAsync(
-            application.PropertyId,
-            currentUser.UserId,
-            application.TenantUserId,
-            "The owner accepted the application. The tenant must confirm the tenancy invitation.",
-            cancellationToken);
 
         return await MapAsync(application.Id, cancellationToken);
     }

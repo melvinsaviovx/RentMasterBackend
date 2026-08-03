@@ -14,7 +14,7 @@ internal static class TokenUtilities
     public static string CreatePublicProfileCode()
     {
         var bytes = RandomNumberGenerator.GetBytes(9);
-        return WebEncoders.Base64UrlEncode(bytes).ToUpperInvariant();
+        return $"RM-{WebEncoders.Base64UrlEncode(bytes).ToUpperInvariant()}";
     }
 
     public static string HashRefreshToken(string token)

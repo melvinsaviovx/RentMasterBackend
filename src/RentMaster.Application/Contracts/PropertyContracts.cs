@@ -30,6 +30,24 @@ public sealed record UpdatePropertyRequest(
     PropertyStatus Status,
     string RowVersion);
 
+public sealed record PropertyPhotoDto(
+    Guid Id,
+    string OriginalFileName,
+    string ContentType,
+    long SizeBytes,
+    int SortOrder);
+
+public sealed record UploadPropertyPhotoCommand(
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    Stream Content);
+
+public sealed record StoredPropertyPhoto(
+    Stream Content,
+    string ContentType,
+    string DownloadFileName);
+
 public sealed record OwnerPropertyDto(
     Guid Id,
     string Title,
@@ -43,6 +61,8 @@ public sealed record OwnerPropertyDto(
     int Bedrooms,
     int Bathrooms,
     PropertyStatus Status,
+    Guid? CoverPhotoId,
+    int PhotoCount,
     string RowVersion);
 
 public sealed record PublicPropertyDto(
@@ -56,7 +76,8 @@ public sealed record PublicPropertyDto(
     decimal MonthlyRent,
     decimal SecurityDeposit,
     int Bedrooms,
-    int Bathrooms);
+    int Bathrooms,
+    Guid? CoverPhotoId);
 
 public sealed record PropertySearchRequest(
     string? City,
@@ -79,4 +100,5 @@ public sealed record PublicPropertyDetailsDto(
     int Bedrooms,
     int Bathrooms,
     PropertyStatus Status,
-    bool HasActiveApplication);
+    bool HasActiveApplication,
+    IReadOnlyList<PropertyPhotoDto> Photos);

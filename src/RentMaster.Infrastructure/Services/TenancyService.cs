@@ -29,8 +29,13 @@ public sealed class TenancyService(
         if (tenancy.StartDate < today)
             throw new ConflictException("The proposed move-in date has passed. Ask the owner to accept a new application with an updated date.");
 
-        tenancy.Status = TenancyStatus.Active;
-        tenancy.Property.Status = PropertyStatus.Occupied;
+        var startsToday = tenancy.StartDate == today;
+        tenancy.Status = startsToday
+            ? TenancyStatus.Active
+            : TenancyStatus.Scheduled;
+        tenancy.Property.Status = startsToday
+            ? PropertyStatus.Occupied
+            : PropertyStatus.Reserved;
 
         var acceptedApplication = await dbContext.RentalApplications
             .SingleOrDefaultAsync(x => x.TenancyId == tenancy.Id, cancellationToken);
@@ -64,7 +69,9 @@ public sealed class TenancyService(
                 tenancy.PropertyId,
                 tenancy.OwnerUserId,
                 application.TenantUserId,
-                "The application was closed because the property is now occupied.",
+                startsToday
+                    ? "The application was closed because the property is now occupied."
+                    : "The application was closed because the property is reserved for another confirmed tenant.",
                 cancellationToken);
         }
 
@@ -78,7 +85,39 @@ public sealed class TenancyService(
             tenancy.PropertyId,
             tenancy.OwnerUserId,
             tenancy.TenantUserId,
-            $"The tenant confirmed the tenancy. Move-in date: {tenancy.StartDate:dd MMM yyyy}.",
+            startsToday
+                ? $"The tenant confirmed the tenancy. The tenancy is now active from {tenancy.StartDate:dd MMM yyyy}."
+                : $"The tenant confirmed the tenancy. Move-in is scheduled for {tenancy.StartDate:dd MMM yyyy}; the property remains reserved until the owner records handover.",
+            cancellationToken);
+
+        return await MapAsync(tenancy, tenancy.Property.Title, cancellationToken);
+    }
+
+    public async Task<TenancyDto> ActivateAsync(
+        Guid tenancyId,
+        CancellationToken cancellationToken)
+    {
+        var tenancy = await GetWithPropertyAsync(tenancyId, cancellationToken);
+
+        if (tenancy.OwnerUserId != currentUser.UserId)
+            throw new ForbiddenException("Only the property owner can record move-in handover.");
+
+        if (tenancy.Status != TenancyStatus.Scheduled)
+            throw new ConflictException("Only a confirmed, scheduled tenancy can be activated.");
+
+        var today = dateProvider.Today;
+        if (tenancy.StartDate > today)
+            throw new ConflictException($"Move-in can be recorded on or after {tenancy.StartDate:dd MMM yyyy}.");
+
+        tenancy.Status = TenancyStatus.Active;
+        tenancy.Property.Status = PropertyStatus.Occupied;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await chatService.AddSystemMessageAsync(
+            tenancy.PropertyId,
+            tenancy.OwnerUserId,
+            tenancy.TenantUserId,
+            $"The owner recorded move-in handover. The tenancy is active from {tenancy.StartDate:dd MMM yyyy}.",
             cancellationToken);
 
         return await MapAsync(tenancy, tenancy.Property.Title, cancellationToken);
@@ -91,9 +130,10 @@ public sealed class TenancyService(
         var tenancy = await GetWithPropertyAsync(tenancyId, cancellationToken);
         EnsureParty(tenancy);
 
-        if (tenancy.Status != TenancyStatus.PendingTenantConfirmation)
-            throw new ConflictException("Only a pending tenancy can be cancelled.");
+        if (tenancy.Status is not (TenancyStatus.PendingTenantConfirmation or TenancyStatus.Scheduled))
+            throw new ConflictException("Only an unconfirmed or pre-move-in tenancy can be cancelled.");
 
+        var wasScheduled = tenancy.Status == TenancyStatus.Scheduled;
         tenancy.Status = TenancyStatus.Cancelled;
         if (tenancy.Property.Status == PropertyStatus.Reserved)
             tenancy.Property.Status = PropertyStatus.Published;
@@ -108,9 +148,13 @@ public sealed class TenancyService(
                 : RentalApplicationStatus.Rejected;
             application.DecisionAtUtc = DateTimeOffset.UtcNow;
             application.DecisionByUserId = currentUser.UserId;
-            application.DecisionReason = currentUser.UserId == tenancy.TenantUserId
-                ? "Tenant declined the tenancy invitation."
-                : "Owner cancelled the pending tenancy invitation.";
+            application.DecisionReason = wasScheduled
+                ? (currentUser.UserId == tenancy.TenantUserId
+                    ? "Tenant cancelled before move-in."
+                    : "Owner cancelled before move-in.")
+                : (currentUser.UserId == tenancy.TenantUserId
+                    ? "Tenant declined the tenancy invitation."
+                    : "Owner cancelled the pending tenancy invitation.");
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -118,9 +162,13 @@ public sealed class TenancyService(
             tenancy.PropertyId,
             tenancy.OwnerUserId,
             tenancy.TenantUserId,
-            currentUser.UserId == tenancy.TenantUserId
-                ? "The tenant declined the tenancy invitation."
-                : "The owner cancelled the tenancy invitation.",
+            wasScheduled
+                ? (currentUser.UserId == tenancy.TenantUserId
+                    ? "The tenant cancelled the tenancy before move-in."
+                    : "The owner cancelled the tenancy before move-in.")
+                : (currentUser.UserId == tenancy.TenantUserId
+                    ? "The tenant declined the tenancy invitation."
+                    : "The owner cancelled the tenancy invitation."),
             cancellationToken);
 
         return await MapAsync(tenancy, tenancy.Property.Title, cancellationToken);
@@ -210,22 +258,14 @@ public sealed class TenancyService(
         tenancy.EndApprovedByUserId = currentUser.UserId;
         tenancy.EndApprovedAtUtc = DateTimeOffset.UtcNow;
 
-        var today = dateProvider.Today;
-        if (tenancy.RequestedEndDate <= today)
-        {
-            await FinalizeEndAsync(tenancy, cancellationToken);
-        }
-        else
-        {
-            tenancy.Status = TenancyStatus.EndScheduled;
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await chatService.AddSystemMessageAsync(
-                tenancy.PropertyId,
-                tenancy.OwnerUserId,
-                tenancy.TenantUserId,
-                $"Both parties approved the tenancy closure for {tenancy.RequestedEndDate:dd MMM yyyy}.",
-                cancellationToken);
-        }
+        tenancy.Status = TenancyStatus.EndScheduled;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await chatService.AddSystemMessageAsync(
+            tenancy.PropertyId,
+            tenancy.OwnerUserId,
+            tenancy.TenantUserId,
+            $"Both parties approved the move-out date of {tenancy.RequestedEndDate:dd MMM yyyy}. The tenancy remains open until the final handover is completed.",
+            cancellationToken);
 
         return await MapAsync(tenancy, tenancy.Property.Title, cancellationToken);
     }
@@ -233,7 +273,9 @@ public sealed class TenancyService(
     public async Task<TenancyDto> CompleteEndAsync(Guid tenancyId, CancellationToken cancellationToken)
     {
         var tenancy = await GetWithPropertyAsync(tenancyId, cancellationToken);
-        EnsureParty(tenancy);
+
+        if (tenancy.OwnerUserId != currentUser.UserId)
+            throw new ForbiddenException("Only the property owner can record the final handover.");
 
         if (tenancy.Status != TenancyStatus.EndScheduled)
             throw new ConflictException("This tenancy does not have an approved scheduled closure.");
@@ -277,7 +319,7 @@ public sealed class TenancyService(
     private async Task FinalizeEndAsync(Tenancy tenancy, CancellationToken cancellationToken)
     {
         tenancy.Status = TenancyStatus.Ended;
-        tenancy.ActualEndDate = tenancy.RequestedEndDate ?? dateProvider.Today;
+        tenancy.ActualEndDate = dateProvider.Today;
         tenancy.Property.Status = PropertyStatus.Published;
 
         var application = await dbContext.RentalApplications
@@ -350,6 +392,11 @@ public sealed class TenancyService(
             .Select(conversation => (Guid?)conversation.Id)
             .SingleOrDefaultAsync(cancellationToken);
 
+        var hasReviewed = await dbContext.Reviews.AsNoTracking()
+            .AnyAsync(review => review.TenancyId == x.Id &&
+                                review.ReviewerUserId == currentUser.UserId,
+                cancellationToken);
+
         return new TenancyDto(
             x.Id,
             x.PropertyId,
@@ -369,6 +416,7 @@ public sealed class TenancyService(
             x.EndApprovedByUserId,
             x.EndApprovedAtUtc,
             conversationId,
+            hasReviewed,
             x.CreatedAtUtc);
     }
 

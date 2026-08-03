@@ -1,87 +1,36 @@
-# KYC document review guide
+# Local KYC review guide
 
-## Who reviews identity documents?
+## Purpose
 
-Only authenticated users with one of these roles can access the moderation API:
+Rent Master accepts Aadhaar or Passport as alternative identity documents. One approved document completes verification.
 
-- `Admin`
-- `Moderator`
+## Configure the Admin
 
-The API controller is protected by:
-
-```csharp
-[Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Moderator}")]
+```bash
+./scripts/configure-local-admin.sh
+./scripts/run-api.sh
 ```
 
-Owners and Tenants can submit and view the status of their own documents, but they cannot open anyone's uploaded KYC file.
+The script stores the Admin email and password in .NET user-secrets. No credentials are committed to the repository or displayed on the login page.
 
-## Local development reviewer account
+## Review flow
 
-The Development configuration seeds this local-only Admin account when the API starts:
+1. Register an Owner or Tenant through the frontend.
+2. Open **Identity verification**.
+3. Select Aadhaar or Passport.
+4. Enter the document number and consent.
+5. Upload a PDF, JPEG or PNG within the configured size limit.
+6. Sign in as Admin.
+7. Open **KYC moderation**.
+8. Preview the pending document.
+9. Approve it, or reject it with a specific correction reason.
+10. The applicant sees the updated status and may resubmit a rejected document.
 
-```text
-Email: admin@rentmaster.local
-Password: RentMasterAdmin@2026!
-```
+## UAT checks
 
-This is for local testing only. The base `appsettings.json` keeps Admin seeding disabled. Replace or remove the development password before sharing/deploying the application.
-
-## Complete review flow
-
-1. Start the API and Angular frontend.
-2. Register an Owner or Tenant account.
-3. Submit either Aadhaar or Passport from **Identity verification**.
-4. Log out.
-5. Sign in with the local Admin account.
-6. Open **KYC moderation** in the sidebar.
-7. Select **Review document**.
-8. Inspect the protected PDF/JPEG/PNG preview.
-9. Verify:
-   - the file is readable;
-   - the selected document type is correct;
-   - the identity details appear internally consistent;
-   - the visible number ending matches the masked ending displayed by Rent Master.
-10. Choose:
-    - **Approve** — status becomes `Verified`;
-    - **Reject** — a specific rejection reason is mandatory.
-11. Sign back in as the Owner/Tenant and open **Identity verification** to see the result.
-
-With `Verification:MinimumVerifiedDocuments` set to `1`, any one accepted document must be `Verified` before `IsComplete` becomes `true`. Set it to `2` only when both Aadhaar and Passport are required.
-
-## Moderation endpoints
-
-```text
-GET  /api/v1/admin/verification/pending
-GET  /api/v1/admin/verification/{documentId}/file
-POST /api/v1/admin/verification/{documentId}/decision
-```
-
-Decision body examples:
-
-```json
-{
-  "approve": true,
-  "reason": null
-}
-```
-
-```json
-{
-  "approve": false,
-  "reason": "The image is blurred. Upload a clear, full-page copy."
-}
-```
-
-## Security behaviour
-
-- File endpoints require the `Admin` or `Moderator` role.
-- Responses use `Cache-Control: no-store` and `Pragma: no-cache`.
-- File access and decisions pass through the API audit middleware.
-- Document numbers are normalised and stored as an HMAC hash plus the last four characters.
-- Duplicate verified identity numbers cannot be linked to a different account.
-- Rejected documents can be replaced; approved documents cannot be overwritten.
-- Uploaded file signatures are checked for PDF, JPEG and PNG content.
-
-## Production requirements
-
-Before production, replace local file storage with private encrypted object storage, add malware scanning, define retention/deletion rules, require reviewer MFA, remove seeded passwords, and establish a documented manual-verification policy.
+- Other Owners and Tenants cannot open the uploaded file.
+- The public UI displays verification status, not the full document number.
+- Unsupported file types and oversized files are rejected.
+- A rejection requires a reason.
+- Approval of either accepted document type marks the user verified.
+- The same document value cannot be reused across accounts.

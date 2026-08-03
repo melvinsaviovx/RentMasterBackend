@@ -7,6 +7,7 @@ public sealed class IdentityDocument : BaseEntity
 {
     public required string UserId { get; set; }
     public IdentityDocumentType DocumentType { get; set; }
+    public required string DocumentNumber { get; set; }
     public required string NumberLast4 { get; set; }
     public required string NumberHash { get; set; }
     public required string StorageObjectName { get; set; }

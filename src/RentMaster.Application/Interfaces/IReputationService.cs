@@ -9,4 +9,9 @@ public interface IReputationService
         int page,
         int pageSize,
         CancellationToken cancellationToken);
+
+    Task<ReputationProfileDto> GetMineAsync(
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken);
 }

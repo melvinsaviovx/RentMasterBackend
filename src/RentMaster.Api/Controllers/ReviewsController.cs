@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using RentMaster.Application.Common;
 using RentMaster.Application.Contracts;
 using RentMaster.Application.Interfaces;
 
@@ -15,9 +14,8 @@ public sealed class ReviewsController(IReviewService reviewService) : Controller
         CancellationToken cancellationToken)
     {
         var id = await reviewService.SubmitAsync(request, cancellationToken);
-        return Accepted(new { reviewId = id, status = "PendingModeration" });
+        return Ok(new { reviewId = id, status = "Published" });
     }
-
 
     [HttpPost("{id:guid}/dispute")]
     public async Task<IActionResult> Dispute(
