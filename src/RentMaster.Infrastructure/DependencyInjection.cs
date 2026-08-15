@@ -123,6 +123,7 @@ public static class DependencyInjection
         services.AddScoped<IReputationService, ReputationService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ISupportService, SupportService>();
+        services.AddScoped<IMaintenanceService, MaintenanceService>();
         services.AddSingleton<IndiaDateProvider>();
         services.AddScoped<IDocumentStorage, PrivateDocumentStorage>();
         services.AddScoped<JwtTokenService>();

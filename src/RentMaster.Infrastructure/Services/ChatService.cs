@@ -17,6 +17,7 @@ public sealed class ChatService(
         Guid propertyId,
         CancellationToken cancellationToken)
     {
+        await TouchPresenceAsync(cancellationToken);
         if (!currentUser.IsInRole(AppRoles.Tenant))
             throw new ForbiddenException("Only tenants can start a property conversation.");
 
@@ -53,6 +54,7 @@ public sealed class ChatService(
         int pageSize,
         CancellationToken cancellationToken)
     {
+        await TouchPresenceAsync(cancellationToken);
         (page, pageSize) = NormalizePage(page, pageSize);
 
         var query = dbContext.ChatConversations.AsNoTracking()
@@ -65,6 +67,10 @@ public sealed class ChatService(
             .Take(pageSize)
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
+
+        // Loading the inbox means the recipient's chat client has received messages for
+        // these conversations. Opening a conversation is still required before ReadAtUtc is set.
+        await MarkDeliveredAsync(ids, cancellationToken);
 
         var items = new List<ChatConversationDto>(ids.Count);
         foreach (var id in ids)
@@ -79,33 +85,54 @@ public sealed class ChatService(
         int pageSize,
         CancellationToken cancellationToken)
     {
+        await TouchPresenceAsync(cancellationToken);
         await EnsureParticipantAsync(conversationId, cancellationToken);
         (page, pageSize) = NormalizePage(page, pageSize);
 
-        var query = dbContext.ChatMessages.AsNoTracking()
+        var query = dbContext.ChatMessages
             .Where(x => x.ConversationId == conversationId)
             .OrderByDescending(x => x.CreatedAtUtc);
 
         var total = await query.CountAsync(cancellationToken);
-        var messageRows = await (
-            from message in query.Skip((page - 1) * pageSize).Take(pageSize)
-            join sender in dbContext.Users.AsNoTracking()
-                on message.SenderUserId equals sender.Id
-            select new { Message = message, Sender = sender })
+        var messages = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = messageRows
-            .OrderBy(x => x.Message.CreatedAtUtc)
-            .Select(x => new ChatMessageDto(
-                x.Message.Id,
-                x.Message.ConversationId,
-                x.Message.SenderUserId,
-                x.Message.IsSystemMessage ? "Rent Master" : x.Sender.FullName,
-                x.Message.Content,
-                x.Message.IsSystemMessage,
-                x.Message.SenderUserId == currentUser.UserId && !x.Message.IsSystemMessage,
-                x.Message.ReadAtUtc,
-                x.Message.CreatedAtUtc))
+        var now = DateTimeOffset.UtcNow;
+        var deliveryChanged = false;
+        foreach (var message in messages)
+        {
+            if (!message.IsSystemMessage &&
+                message.SenderUserId != currentUser.UserId &&
+                message.DeliveredAtUtc is null)
+            {
+                message.DeliveredAtUtc = now;
+                deliveryChanged = true;
+            }
+        }
+
+        if (deliveryChanged)
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+        var senderIds = messages.Select(x => x.SenderUserId).Distinct().ToArray();
+        var senders = await dbContext.Users.AsNoTracking()
+            .Where(x => senderIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.FullName, cancellationToken);
+
+        var items = messages
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(message => new ChatMessageDto(
+                message.Id,
+                message.ConversationId,
+                message.SenderUserId,
+                message.IsSystemMessage ? "Rent Master" : senders.GetValueOrDefault(message.SenderUserId, "User"),
+                message.Content,
+                message.IsSystemMessage,
+                message.SenderUserId == currentUser.UserId && !message.IsSystemMessage,
+                message.DeliveredAtUtc,
+                message.ReadAtUtc,
+                message.CreatedAtUtc))
             .ToArray();
 
         return new PagedResult<ChatMessageDto>(items, page, pageSize, total);
@@ -116,6 +143,7 @@ public sealed class ChatService(
         SendChatMessageRequest request,
         CancellationToken cancellationToken)
     {
+        await TouchPresenceAsync(cancellationToken);
         var conversation = await EnsureParticipantAsync(conversationId, cancellationToken);
         var content = NormalizeContent(request.Content);
 
@@ -143,12 +171,14 @@ public sealed class ChatService(
             message.Content,
             false,
             true,
+            message.DeliveredAtUtc,
             message.ReadAtUtc,
             message.CreatedAtUtc);
     }
 
     public async Task MarkReadAsync(Guid conversationId, CancellationToken cancellationToken)
     {
+        await TouchPresenceAsync(cancellationToken);
         await EnsureParticipantAsync(conversationId, cancellationToken);
         var unread = await dbContext.ChatMessages
             .Where(x => x.ConversationId == conversationId &&
@@ -161,7 +191,10 @@ public sealed class ChatService(
 
         var now = DateTimeOffset.UtcNow;
         foreach (var message in unread)
+        {
+            message.DeliveredAtUtc ??= now;
             message.ReadAtUtc = now;
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -331,11 +364,50 @@ public sealed class ChatService(
             result.Property.Title,
             counterparty.FullName,
             counterparty.PublicProfileCode,
+            counterparty.LastSeenAtUtc,
             result.Conversation.RentalApplicationId,
             result.Conversation.TenancyId,
             lastMessage is null ? null : Truncate(lastMessage, 90),
             result.Conversation.LastMessageAtUtc,
             unreadCount);
+    }
+
+    private async Task MarkDeliveredAsync(
+        IReadOnlyCollection<Guid> conversationIds,
+        CancellationToken cancellationToken)
+    {
+        if (conversationIds.Count == 0)
+            return;
+
+        var undelivered = await dbContext.ChatMessages
+            .Where(x => conversationIds.Contains(x.ConversationId) &&
+                        !x.IsSystemMessage &&
+                        x.SenderUserId != currentUser.UserId &&
+                        x.DeliveredAtUtc == null)
+            .ToListAsync(cancellationToken);
+
+        if (undelivered.Count == 0)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var message in undelivered)
+            message.DeliveredAtUtc = now;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task TouchPresenceAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Id == currentUser.UserId, cancellationToken);
+        if (user is null)
+            return;
+
+        if (user.LastSeenAtUtc is null || now - user.LastSeenAtUtc.Value >= TimeSpan.FromSeconds(45))
+        {
+            user.LastSeenAtUtc = now;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private static string NormalizeContent(string? content)

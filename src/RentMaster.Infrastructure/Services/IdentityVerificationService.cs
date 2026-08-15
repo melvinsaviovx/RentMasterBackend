@@ -46,18 +46,27 @@ public sealed class IdentityVerificationService(
             throw new ValidationException("A valid consent-policy version is required.");
 
         var normalizedNumber = NormalizeDocumentNumber(command.DocumentType, command.DocumentNumber);
-        var numberHash = ComputeNumberHash(command.DocumentType, normalizedNumber);
+        // Demo auto-approval intentionally scopes the hash to the current account so multiple
+        // visitors can reuse the same sample document value. Manual verification keeps the
+        // normal cross-account duplicate protection.
+        var hashValue = _options.AutoApproveSubmissions
+            ? $"{currentUser.UserId}:{normalizedNumber}"
+            : normalizedNumber;
+        var numberHash = ComputeNumberHash(command.DocumentType, hashValue);
         var last4 = normalizedNumber[^4..];
 
-        var duplicateOwner = await dbContext.IdentityDocuments
-            .Where(x => x.DocumentType == command.DocumentType &&
-                        x.NumberHash == numberHash &&
-                        (x.Status == VerificationStatus.Pending || x.Status == VerificationStatus.Verified))
-            .Select(x => x.UserId)
-            .FirstOrDefaultAsync(cancellationToken);
+        if (!_options.AutoApproveSubmissions)
+        {
+            var duplicateOwner = await dbContext.IdentityDocuments
+                .Where(x => x.DocumentType == command.DocumentType &&
+                            x.NumberHash == numberHash &&
+                            (x.Status == VerificationStatus.Pending || x.Status == VerificationStatus.Verified))
+                .Select(x => x.UserId)
+                .FirstOrDefaultAsync(cancellationToken);
 
-        if (duplicateOwner is not null && duplicateOwner != currentUser.UserId)
-            throw new ConflictException("This identity document is already linked to another account or awaiting review.");
+            if (duplicateOwner is not null && duplicateOwner != currentUser.UserId)
+                throw new ConflictException("This identity document is already linked to another account or awaiting review.");
+        }
 
         var existing = await dbContext.IdentityDocuments.SingleOrDefaultAsync(
             x => x.UserId == currentUser.UserId && x.DocumentType == command.DocumentType,
@@ -91,7 +100,8 @@ public sealed class IdentityVerificationService(
                     ConsentVersion = command.ConsentVersion.Trim(),
                     ConsentAcceptedAtUtc = DateTimeOffset.UtcNow,
                     ConsentIpAddress = command.IpAddress,
-                    Status = VerificationStatus.Pending
+                    Status = _options.AutoApproveSubmissions ? VerificationStatus.Verified : VerificationStatus.Pending,
+                    ReviewedAtUtc = _options.AutoApproveSubmissions ? DateTimeOffset.UtcNow : null
                 };
                 dbContext.IdentityDocuments.Add(existing);
             }
@@ -108,10 +118,10 @@ public sealed class IdentityVerificationService(
                 existing.ConsentVersion = command.ConsentVersion.Trim();
                 existing.ConsentAcceptedAtUtc = DateTimeOffset.UtcNow;
                 existing.ConsentIpAddress = command.IpAddress;
-                existing.Status = VerificationStatus.Pending;
+                existing.Status = _options.AutoApproveSubmissions ? VerificationStatus.Verified : VerificationStatus.Pending;
                 existing.RejectionReason = null;
                 existing.ReviewedByUserId = null;
-                existing.ReviewedAtUtc = null;
+                existing.ReviewedAtUtc = _options.AutoApproveSubmissions ? DateTimeOffset.UtcNow : null;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
                 try
@@ -159,7 +169,8 @@ public sealed class IdentityVerificationService(
             verifiedDocumentCount >= _minimumVerifiedDocuments,
             documents.Select(Map).ToArray(),
             _requiredDocuments,
-            _minimumVerifiedDocuments);
+            _minimumVerifiedDocuments,
+            _options.AutoApproveSubmissions);
     }
 
     public async Task<bool> IsUserVerifiedAsync(string userId, CancellationToken cancellationToken)

@@ -17,4 +17,8 @@ public sealed class VerificationOptions
     // Phase 1 policy: approve any one accepted identity document
     // (Aadhaar OR Passport).
     public int MinimumVerifiedDocuments { get; init; } = 1;
+
+    // Intended for local/demo environments only. When enabled, a valid upload
+    // is immediately marked Verified and no admin review is required.
+    public bool AutoApproveSubmissions { get; init; } = false;
 }

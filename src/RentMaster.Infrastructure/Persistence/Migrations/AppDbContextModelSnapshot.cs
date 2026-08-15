@@ -285,6 +285,9 @@ namespace RentMaster.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("DeliveredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -312,6 +315,8 @@ namespace RentMaster.Infrastructure.Persistence.Migrations
                     b.HasIndex("SenderUserId");
 
                     b.HasIndex("ConversationId", "CreatedAtUtc");
+
+                    b.HasIndex("ConversationId", "DeliveredAtUtc");
 
                     b.HasIndex("ConversationId", "ReadAtUtc");
 
@@ -415,6 +420,85 @@ namespace RentMaster.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("IdentityDocuments");
+                });
+
+            modelBuilder.Entity("RentMaster.Domain.Entities.MaintenanceRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AssignedToUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTimeOffset?>("AssignedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(3000)
+                        .HasColumnType("nvarchar(3000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MaintenanceNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PropertyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenancyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("PropertyId");
+
+                    b.HasIndex("AssignedToUserId", "Status", "CreatedAtUtc");
+
+                    b.HasIndex("TenancyId", "Status", "CreatedAtUtc");
+
+                    b.ToTable("MaintenanceRequests");
                 });
 
             modelBuilder.Entity("RentMaster.Domain.Entities.OwnerProfile", b =>
@@ -1089,6 +1173,9 @@ namespace RentMaster.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<DateTimeOffset?>("LastSeenAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
 
@@ -1255,6 +1342,36 @@ namespace RentMaster.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("RentMaster.Domain.Entities.MaintenanceRequest", b =>
+                {
+                    b.HasOne("RentMaster.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedToUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("RentMaster.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RentMaster.Domain.Entities.Property", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RentMaster.Domain.Entities.Tenancy", "Tenancy")
+                        .WithMany()
+                        .HasForeignKey("TenancyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Property");
+
+                    b.Navigation("Tenancy");
                 });
 
             modelBuilder.Entity("RentMaster.Domain.Entities.OwnerProfile", b =>

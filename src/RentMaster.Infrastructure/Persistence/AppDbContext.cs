@@ -24,6 +24,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<PropertyPhoto> PropertyPhotos => Set<PropertyPhoto>();
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<MaintenanceRequest> MaintenanceRequests => Set<MaintenanceRequest>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -50,6 +51,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureBaseEntity<ChatMessage>(builder);
         ConfigureBaseEntity<PropertyPhoto>(builder);
         ConfigureBaseEntity<SupportTicket>(builder);
+        ConfigureBaseEntity<MaintenanceRequest>(builder);
 
         builder.Entity<OwnerProfile>(entity =>
         {
@@ -135,6 +137,31 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+
+        builder.Entity<MaintenanceRequest>(entity =>
+        {
+            entity.Property(x => x.Title).HasMaxLength(160);
+            entity.Property(x => x.Description).HasMaxLength(3000);
+            entity.Property(x => x.MaintenanceNote).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.TenancyId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.AssignedToUserId, x.Status, x.CreatedAtUtc });
+            entity.HasOne(x => x.Tenancy)
+                .WithMany()
+                .HasForeignKey(x => x.TenancyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Property)
+                .WithMany()
+                .HasForeignKey(x => x.PropertyId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.AssignedToUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         builder.Entity<RentalApplication>(entity =>
         {
@@ -274,6 +301,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             entity.Property(x => x.Content).HasMaxLength(2000);
             entity.HasIndex(x => new { x.ConversationId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.ConversationId, x.DeliveredAtUtc });
             entity.HasIndex(x => new { x.ConversationId, x.ReadAtUtc });
             entity.HasOne(x => x.Conversation)
                 .WithMany(x => x.Messages)

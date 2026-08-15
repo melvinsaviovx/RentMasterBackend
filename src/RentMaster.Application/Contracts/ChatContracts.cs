@@ -6,6 +6,7 @@ public sealed record ChatConversationDto(
     string PropertyTitle,
     string CounterpartyDisplayName,
     string CounterpartyProfileCode,
+    DateTimeOffset? CounterpartyLastSeenAtUtc,
     Guid? RentalApplicationId,
     Guid? TenancyId,
     string? LastMessagePreview,
@@ -20,6 +21,7 @@ public sealed record ChatMessageDto(
     string Content,
     bool IsSystemMessage,
     bool IsMine,
+    DateTimeOffset? DeliveredAtUtc,
     DateTimeOffset? ReadAtUtc,
     DateTimeOffset CreatedAtUtc);
 
